@@ -169,9 +169,33 @@ const hud = document.getElementById("hud") as HTMLDivElement;
 const mobileControls = document.getElementById("mobile-controls") as HTMLDivElement;
 const scoreEl = document.getElementById("score") as HTMLDivElement;
 const ammoInfo = document.getElementById("ammo-info") as HTMLDivElement;
+const timeInfo = document.getElementById("time-info") as HTMLDivElement;
+const endScreen = document.getElementById("end-screen") as HTMLDivElement;
+const finalScoreEl = document.getElementById("final-score") as HTMLDivElement;
+const restartButton = document.getElementById("restart-button") as HTMLButtonElement;
 
 let gameActive = false;
 let score = 0;
+
+// 移动端：尝试请求全屏 + 锁定横屏（部分浏览器不支持，静默失败即可，
+// 竖屏时仍有 #rotate-hint 的 CSS 兜底提示）
+function tryLockLandscape() {
+  if (!isTouchDevice) return;
+  try {
+    const el = document.documentElement;
+    if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {});
+    }
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>;
+    };
+    if (orientation && orientation.lock) {
+      orientation.lock("landscape").catch(() => {});
+    }
+  } catch {
+    // 忽略不支持的浏览器
+  }
+}
 
 function enterGame() {
   gameActive = true;
@@ -185,13 +209,18 @@ function enterGame() {
 
 function exitGame() {
   gameActive = false;
-  startOverlay.classList.remove("hidden");
   crosshair.classList.remove("visible");
   hud.classList.remove("visible");
   mobileControls.classList.add("hidden");
+  // 回合已结束时不要把开始遮罩重新盖回结算页上面
+  if (endScreen.classList.contains("hidden")) {
+    startOverlay.classList.remove("hidden");
+  }
 }
 
 startButton.addEventListener("click", () => {
+  ensureAudio();
+  tryLockLandscape();
   if (isTouchDevice) {
     enterGame();
   } else {
@@ -203,6 +232,7 @@ startButton.addEventListener("click", () => {
 startOverlay.addEventListener("click", (e) => {
   if (isTouchDevice) return;
   if (e.target === startButton) return;
+  ensureAudio();
   controls.lock();
 });
 
@@ -413,8 +443,8 @@ function updateMovement(delta: number) {
     attemptMove(moveX, moveZ);
   }
 
-  // 保持视点高度固定（无跳跃 / 无重力）
-  camera.position.y = EYE_HEIGHT;
+  // 视点高度（含跑动起伏）由 updateMovementFeel 统一设置
+  updateMovementFeel(delta, inputLength);
 }
 
 /* ------------------------------------------------------------------ */
@@ -514,6 +544,10 @@ function shoot() {
   if (now - lastFireTime < FIRE_COOLDOWN_MS) return;
   lastFireTime = now;
 
+  playShot();
+  spawnMuzzleFlash();
+  flashCrosshair();
+
   raycaster.setFromCamera(screenCenter, camera);
 
   const shootTargets: THREE.Object3D[] = [
@@ -522,12 +556,24 @@ function shoot() {
   ];
 
   const hits = raycaster.intersectObjects(shootTargets, false);
+
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  const muzzlePoint = camera.position
+    .clone()
+    .add(forward.clone().multiplyScalar(0.4))
+    .add(new THREE.Vector3(0, -0.1, 0));
+  const tracerEnd = hits.length > 0 ? hits[0].point : camera.position.clone().add(forward.clone().multiplyScalar(80));
+  spawnTracer(muzzlePoint, tracerEnd);
+
   if (hits.length === 0) return;
 
   const hitObject = hits[0].object;
   const hitEnemy = enemies.find((e) => e.mesh === hitObject);
   if (hitEnemy) {
     onEnemyHit(hitEnemy);
+    playHit();
+    spawnHitSpark(hits[0].point);
   }
   // 命中掩体/墙体则视为被掩体挡住，不做任何处理（子弹被挡）
 }
@@ -552,6 +598,294 @@ fireButton.addEventListener(
 );
 
 /* ------------------------------------------------------------------ */
+/*  第六步：音效 / 移动反馈 / 限时结束 / 射击特效                       */
+/* ------------------------------------------------------------------ */
+
+/* ---------------- Web Audio 合成音效（无需外部音频文件） ---------------- */
+let audioCtx: AudioContext | null = null;
+
+function ensureAudio(): AudioContext {
+  if (!audioCtx) {
+    const AudioCtor =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    audioCtx = new AudioCtor();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playShot() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+
+  // 白噪声枪声主体
+  const noiseDuration = 0.12;
+  const bufferSize = Math.floor(ctx.sampleRate * noiseDuration);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const bandpass = ctx.createBiquadFilter();
+  bandpass.type = "bandpass";
+  bandpass.frequency.value = 1200;
+  bandpass.Q.value = 0.7;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.5, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDuration);
+  noise.connect(bandpass).connect(noiseGain).connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + noiseDuration + 0.01);
+
+  // 低频 "砰" 补充枪声厚度
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(120, now);
+  osc.frequency.exponentialRampToValueAtTime(48, now + 0.08);
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0.4, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+  osc.connect(oscGain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.1);
+}
+
+function playHit() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(880, now);
+  osc.frequency.exponentialRampToValueAtTime(440, now + 0.1);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.22, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.13);
+}
+
+function playFootstep() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  const duration = 0.06;
+  const bufferSize = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 3);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = "lowpass";
+  lowpass.frequency.value = 350;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.16, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  noise.connect(lowpass).connect(gain).connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + duration + 0.01);
+}
+
+/* ---------------- 射击特效：枪口闪光 / 弹道 / 命中火花 ---------------- */
+type TransientEffect = {
+  obj: THREE.Object3D;
+  start: number;
+  duration: number;
+  update: (t: number) => void;
+  dispose?: () => void;
+};
+
+const effects: TransientEffect[] = [];
+
+function spawnMuzzleFlash() {
+  const light = new THREE.PointLight(0xffdd88, 3, 6);
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  light.position
+    .copy(camera.position)
+    .add(forward.multiplyScalar(0.4))
+    .add(new THREE.Vector3(0, -0.1, 0));
+  scene.add(light);
+  effects.push({
+    obj: light,
+    start: performance.now(),
+    duration: 60,
+    update(t) {
+      light.intensity = 3 * (1 - t);
+    },
+  });
+}
+
+function spawnTracer(from: THREE.Vector3, to: THREE.Vector3) {
+  const geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xfff2c2,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const line = new THREE.Line(geometry, material);
+  scene.add(line);
+  effects.push({
+    obj: line,
+    start: performance.now(),
+    duration: 90,
+    update(t) {
+      material.opacity = 0.9 * (1 - t);
+    },
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  });
+}
+
+function spawnHitSpark(position: THREE.Vector3) {
+  const geometry = new THREE.SphereGeometry(0.07, 6, 6);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffcf6b,
+    transparent: true,
+    opacity: 1,
+  });
+  const spark = new THREE.Mesh(geometry, material);
+  spark.position.copy(position);
+  scene.add(spark);
+  effects.push({
+    obj: spark,
+    start: performance.now(),
+    duration: 220,
+    update(t) {
+      spark.scale.setScalar(1 + t * 4);
+      material.opacity = 1 - t;
+    },
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  });
+}
+
+function updateEffects() {
+  const now = performance.now();
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const eff = effects[i];
+    const t = (now - eff.start) / eff.duration;
+    if (t >= 1) {
+      scene.remove(eff.obj);
+      eff.dispose?.();
+      effects.splice(i, 1);
+    } else {
+      eff.update(Math.min(t, 1));
+    }
+  }
+}
+
+// 准星开火闪白反馈
+let crosshairFlashTimeout: number | undefined;
+function flashCrosshair() {
+  crosshair.classList.add("firing");
+  window.clearTimeout(crosshairFlashTimeout);
+  crosshairFlashTimeout = window.setTimeout(() => {
+    crosshair.classList.remove("firing");
+  }, 90);
+}
+
+/* ---------------- 移动反馈：视角起伏 + 轻微摇摆 + FOV ---------------- */
+const BASE_FOV = 75;
+const RUN_FOV = 80;
+const BOB_FREQUENCY = 9;
+const BOB_AMPLITUDE = 0.045;
+const BOB_ROLL_AMPLITUDE = 0.014;
+const FOOTSTEP_INTERVAL = 0.32;
+
+let bobTime = 0;
+let footstepTimer = 0;
+
+function updateMovementFeel(delta: number, moveInputLength: number) {
+  const isMoving = moveInputLength > 0.05;
+
+  if (isMoving) {
+    bobTime += delta * BOB_FREQUENCY * Math.max(moveInputLength, 0.4);
+    footstepTimer += delta;
+    if (footstepTimer >= FOOTSTEP_INTERVAL) {
+      footstepTimer = 0;
+      playFootstep();
+    }
+  } else {
+    footstepTimer = 0;
+  }
+
+  const bobOffset = isMoving ? Math.sin(bobTime) * BOB_AMPLITUDE : 0;
+  const bobRoll = isMoving ? Math.sin(bobTime) * BOB_ROLL_AMPLITUDE : 0;
+  camera.position.y = EYE_HEIGHT + bobOffset;
+  camera.rotation.z = bobRoll;
+
+  const targetFov = isMoving ? RUN_FOV : BASE_FOV;
+  const nextFov = camera.fov + (targetFov - camera.fov) * Math.min(delta * 6, 1);
+  if (Math.abs(nextFov - camera.fov) > 0.01) {
+    camera.fov = nextFov;
+    camera.updateProjectionMatrix();
+  }
+}
+
+/* ---------------- 限时结束机制 ---------------- */
+const ROUND_SECONDS = 60;
+let timeRemaining = ROUND_SECONDS;
+
+function updateTimeUI() {
+  timeInfo.textContent = `剩余时间: ${Math.max(0, Math.ceil(timeRemaining))}s`;
+}
+updateTimeUI();
+
+function endRound() {
+  gameActive = false;
+  crosshair.classList.remove("visible");
+  hud.classList.remove("visible");
+  mobileControls.classList.add("hidden");
+  finalScoreEl.textContent = String(score);
+  endScreen.classList.remove("hidden");
+  if (!isTouchDevice && controls.isLocked) {
+    controls.unlock();
+  }
+}
+
+function resetRound() {
+  score = 0;
+  scoreEl.textContent = "击杀: 0";
+  timeRemaining = ROUND_SECONDS;
+  updateTimeUI();
+  endScreen.classList.add("hidden");
+}
+
+function updateRoundTimer(delta: number) {
+  if (!gameActive) return;
+  timeRemaining -= delta;
+  if (timeRemaining <= 0) {
+    timeRemaining = 0;
+    updateTimeUI();
+    endRound();
+    return;
+  }
+  updateTimeUI();
+}
+
+restartButton.addEventListener("click", () => {
+  ensureAudio();
+  resetRound();
+  tryLockLandscape();
+  if (isTouchDevice) {
+    enterGame();
+  } else {
+    controls.lock();
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  渲染循环 + 窗口自适应                                              */
 /* ------------------------------------------------------------------ */
 
@@ -570,6 +904,8 @@ function animate() {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
   updateMovement(delta);
+  updateRoundTimer(delta);
+  updateEffects();
   renderer.render(scene, camera);
 }
 animate();

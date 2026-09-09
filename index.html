@@ -20,10 +20,11 @@
         <div class="crosshair-line crosshair-v"></div>
       </div>
 
-      <!-- 顶部 HUD：分数 -->
+      <!-- 顶部 HUD：分数 / 存活目标 / 剩余时间 -->
       <div id="hud">
         <div id="score">击杀: 0</div>
         <div id="ammo-info">目标: 待命</div>
+        <div id="time-info">剩余时间: 60s</div>
       </div>
 
       <!-- 开始引导遮罩层 -->
@@ -38,7 +39,26 @@
           <p class="hint-sub mobile-hint">
             左侧摇杆移动 &nbsp;|&nbsp; 右侧滑动视角 &nbsp;|&nbsp; 点击 FIRE 射击
           </p>
+          <p class="hint-sub">限时 60 秒，尽可能多击杀目标</p>
           <button id="start-button">开始游戏</button>
+        </div>
+      </div>
+
+      <!-- 结算页 -->
+      <div id="end-screen" class="hidden">
+        <div id="end-panel">
+          <h1>行动结束</h1>
+          <p id="final-score-label">本轮击杀</p>
+          <div id="final-score">0</div>
+          <button id="restart-button">再来一次</button>
+        </div>
+      </div>
+
+      <!-- 竖屏提示（触屏设备竖屏时遮挡整个界面） -->
+      <div id="rotate-hint">
+        <div id="rotate-hint-inner">
+          <div id="rotate-icon">⟲</div>
+          <p>请将设备横屏后继续游戏</p>
         </div>
       </div>
 

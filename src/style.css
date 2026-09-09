@@ -73,6 +73,12 @@ body {
   transform: translateX(-50%);
 }
 
+/* 射击时准星短暂闪白，作为开火反馈 */
+#crosshair.firing .crosshair-line {
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.95);
+}
+
 /* HUD */
 #hud {
   position: absolute;
@@ -91,7 +97,8 @@ body {
   display: block;
 }
 
-#ammo-info {
+#ammo-info,
+#time-info {
   margin-top: 4px;
   font-size: 14px;
   font-weight: normal;
@@ -154,6 +161,102 @@ body {
 
 #start-button:active {
   transform: scale(0.97);
+}
+
+/* 结算页 */
+#end-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 51;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #1a2a1a 0%, #05070a 100%);
+}
+
+#end-screen.hidden {
+  display: none;
+}
+
+#end-panel {
+  text-align: center;
+  color: #eafff0;
+  padding: 24px;
+}
+
+#end-panel h1 {
+  font-size: 40px;
+  letter-spacing: 4px;
+  color: #4dff88;
+  text-shadow: 0 0 20px rgba(77, 255, 136, 0.6);
+  margin-bottom: 8px;
+}
+
+#final-score-label {
+  font-size: 15px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+#final-score {
+  font-size: 72px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(77, 255, 136, 0.5);
+  margin-bottom: 24px;
+}
+
+#restart-button {
+  padding: 14px 40px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #05070a;
+  background: #4dff88;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(77, 255, 136, 0.5);
+}
+
+#restart-button:active {
+  transform: scale(0.97);
+}
+
+/* 竖屏提示：触屏设备处于竖屏时挡住整个界面 */
+#rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #05070a;
+  color: #eafff0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+@media (orientation: portrait) {
+  body.is-touch #rotate-hint {
+    display: flex;
+  }
+}
+
+#rotate-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  display: inline-block;
+  animation: rotate-hint-spin 1.6s ease-in-out infinite;
+}
+
+#rotate-hint-inner p {
+  font-size: 17px;
+  opacity: 0.85;
+}
+
+@keyframes rotate-hint-spin {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
 }
 
 .mobile-hint {

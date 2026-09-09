@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>刺激战争 - 3D 阵地枪战</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 游戏画布容器，Three.js 的 canvas 会被插入到这里 -->
+      <div id="scene-container"></div>
+
+      <!-- 十字准星 -->
+      <div id="crosshair">
+        <div class="crosshair-line crosshair-h"></div>
+        <div class="crosshair-line crosshair-v"></div>
+      </div>
+
+      <!-- 顶部 HUD：分数 -->
+      <div id="hud">
+        <div id="score">击杀: 0</div>
+        <div id="ammo-info">目标: 待命</div>
+      </div>
+
+      <!-- 开始引导遮罩层 -->
+      <div id="start-overlay">
+        <div id="start-panel">
+          <h1>刺激战争</h1>
+          <p class="desktop-hint">点击屏幕开始游戏</p>
+          <p class="hint-sub desktop-hint">
+            WASD 移动 &nbsp;|&nbsp; 鼠标控制视角 &nbsp;|&nbsp; 左键射击 &nbsp;|&nbsp; ESC 退出
+          </p>
+          <p class="mobile-hint">点击下方按钮开始游戏</p>
+          <p class="hint-sub mobile-hint">
+            左侧摇杆移动 &nbsp;|&nbsp; 右侧滑动视角 &nbsp;|&nbsp; 点击 FIRE 射击
+          </p>
+          <button id="start-button">开始游戏</button>
+        </div>
+      </div>
+
+      <!-- 移动端虚拟控制层（默认隐藏，检测到触屏设备时显示） -->
+      <div id="mobile-controls" class="hidden">
+        <div id="joystick-zone">
+          <div id="joystick-base">
+            <div id="joystick-knob"></div>
+          </div>
+        </div>
+        <div id="look-zone"></div>
+        <button id="fire-button">FIRE</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

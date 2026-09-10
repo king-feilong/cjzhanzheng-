@@ -773,12 +773,30 @@
 
   function startGame(charGltf) {
   var CHAR = charGltf; // { scene, animations, extraClips } 或 null（后备程序化建模）
+  // Mixamo 导出时没勾"In Place"，跑步动作的 Hips 骨骼自己就带了一段水平位移（一个循环里向前挪 2 米多），
+  // 而角色的实际移动是由游戏代码按输入/速度另外算的——两者叠加，动画每循环一次（0.75s）就会把身体
+  // "吸"回起始位置，看起来像闪现/瞬移。这里把该动作的 Hips 水平分量（X/Z）钉死在第一帧的值上，
+  // 只保留竖直方向的自然起伏，让动作纯粹变成"原地摆腿"，水平移动完全交给游戏代码控制
+  function stripHorizontalRootMotion(clip) {
+    if (!clip) return clip;
+    for (var i = 0; i < clip.tracks.length; i++) {
+      var track = clip.tracks[i];
+      if (track.name === "mixamorigHips.position" && track.values && track.values.length >= 3) {
+        var baseX = track.values[0], baseZ = track.values[2];
+        for (var k = 0; k < track.values.length; k += 3) {
+          track.values[k] = baseX;
+          track.values[k + 2] = baseZ;
+        }
+      }
+    }
+    return clip;
+  }
   // 跑动 / 俯卧转身 / 跳跃 / 死亡，四条动作片段共用同一套骨骼命名，可以被所有角色实例（敌人 + 玩家）的
   // AnimationMixer 共同引用，不需要每个实例各自复制一份关键帧数据
   var CLIPS = null;
   if (CHAR) {
     CLIPS = {
-      run: CHAR.animations && CHAR.animations[0] ? CHAR.animations[0] : null,
+      run: CHAR.animations && CHAR.animations[0] ? stripHorizontalRootMotion(CHAR.animations[0]) : null,
       prone_turn: CHAR.extraClips ? CHAR.extraClips.prone_turn : null,
       jump: CHAR.extraClips ? CHAR.extraClips.jump : null,
       dying: CHAR.extraClips ? CHAR.extraClips.dying : null,

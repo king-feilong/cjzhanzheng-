@@ -13,6 +13,8 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/SMAAShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SMAAPass.js"></script>
 
 <style>
   :root {
@@ -936,15 +938,17 @@
   // 天空/雾用深色调渲染夜晚氛围，但实际光照（sun/hemi）颜色要够亮，不然地面/掩体/敌人会糊成一片黑，
   // 快节奏射击游戏可读性优先于纯写实的暗夜效果
   var WEATHER_PRESETS = {
-    clear: { skyTop: 0x050415, skyBottom: 0x2c2060, fogColor: 0x2a2358, fogNear: 65, fogFar: 250, sunColor: 0xaecaff, sunIntensity: 1.35, hemiSky: 0xa9a0e8, hemiGround: 0x1c1836, hemiIntensity: 1, cloudOpacity: 0.45, cloudCount: 14, rain: false },
-    overcast: { skyTop: 0x110d1e, skyBottom: 0x3a3055, fogColor: 0x2f2840, fogNear: 40, fogFar: 190, sunColor: 0xb6b8e0, sunIntensity: 0.9, hemiSky: 0x9088c8, hemiGround: 0x181530, hemiIntensity: 0.85, cloudOpacity: 0.85, cloudCount: 26, rain: false },
-    haze: { skyTop: 0x141a0c, skyBottom: 0x4a5a20, fogColor: 0x596a2c, fogNear: 28, fogFar: 155, sunColor: 0xd8e88a, sunIntensity: 1.05, hemiSky: 0xb8cc72, hemiGround: 0x242410, hemiIntensity: 0.9, cloudOpacity: 0.5, cloudCount: 10, rain: false },
-    rain: { skyTop: 0x030308, skyBottom: 0x1c1436, fogColor: 0x201938, fogNear: 24, fogFar: 140, sunColor: 0x9aa8e0, sunIntensity: 0.85, hemiSky: 0x7a78c0, hemiGround: 0x120f28, hemiIntensity: 0.8, cloudOpacity: 0.9, cloudCount: 30, rain: true },
+    clear: { skyTop: 0x050415, skyBottom: 0x2c2060, fogColor: 0x2a2358, fogDensity: 0.0075, sunColor: 0xaecaff, sunIntensity: 1.35, hemiSky: 0xa9a0e8, hemiGround: 0x1c1836, hemiIntensity: 1, cloudOpacity: 0.45, cloudCount: 14, rain: false },
+    overcast: { skyTop: 0x110d1e, skyBottom: 0x3a3055, fogColor: 0x2f2840, fogDensity: 0.0098, sunColor: 0xb6b8e0, sunIntensity: 0.9, hemiSky: 0x9088c8, hemiGround: 0x181530, hemiIntensity: 0.85, cloudOpacity: 0.85, cloudCount: 26, rain: false },
+    haze: { skyTop: 0x141a0c, skyBottom: 0x4a5a20, fogColor: 0x596a2c, fogDensity: 0.012, sunColor: 0xd8e88a, sunIntensity: 1.05, hemiSky: 0xb8cc72, hemiGround: 0x242410, hemiIntensity: 0.9, cloudOpacity: 0.5, cloudCount: 10, rain: false },
+    rain: { skyTop: 0x030308, skyBottom: 0x1c1436, fogColor: 0x201938, fogDensity: 0.0135, sunColor: 0x9aa8e0, sunIntensity: 0.85, hemiSky: 0x7a78c0, hemiGround: 0x120f28, hemiIntensity: 0.8, cloudOpacity: 0.9, cloudCount: 30, rain: true },
   };
   var WEATHER_KEYS = Object.keys(WEATHER_PRESETS);
   var weather = WEATHER_PRESETS[WEATHER_KEYS[(Math.random() * WEATHER_KEYS.length) | 0]];
 
-  scene.fog = new THREE.Fog(weather.fogColor, weather.fogNear, weather.fogFar);
+  // 指数雾（FogExp2）比线性雾（near/far 两个硬边界）更自然：近处几乎不受影响，
+  // 越远浓度按指数上升，不会有"雾墙"一样的生硬分界线
+  scene.fog = new THREE.FogExp2(weather.fogColor, weather.fogDensity);
 
   var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   var EYE_H = 1.7;
@@ -952,11 +956,11 @@
   // 相机本身要挂进场景图，第一人称枪械视图模型才会作为相机子物体被渲染出来
   scene.add(camera);
 
-  /* ---------------- 第一人称枪械视图模型（M4/M416 造型） ---------------- */
+  /* ---------------- 第一人称枪械视图模型（优先用真实 GLTF 枪械资源，加载失败/还没加载完前用几何体拼接的顶替） ---------------- */
   var GUN_REST = { x: 0.24, y: -0.27, z: -0.5 };
   var gunView = new THREE.Group();
-  var muzzleTip = new THREE.Object3D(); // 真实枪口标记点，弹道/枪口火光都从这里发射
-  (function buildGunView() {
+  var muzzleTip = new THREE.Object3D(); // 真实枪口标记点，弹道/枪口火光都从这里发射；换成 GLTF 枪械后这个引用会被整体替换成挂在新模型上的对应点
+  function buildProceduralGunView() {
     var receiverMat = new THREE.MeshStandardMaterial({ color: 0x2b2a24, roughness: 0.45, metalness: 0.4 });
     var polymerMat = new THREE.MeshStandardMaterial({ color: 0x1f1e19, roughness: 0.6, metalness: 0.15 });
     var metalMat = new THREE.MeshStandardMaterial({ color: 0x38362e, roughness: 0.35, metalness: 0.6 });
@@ -1011,11 +1015,37 @@
     gp(new THREE.BoxGeometry(0.07, 0.08, 0.28), sleeveMat, 0.06, -0.24, 0.09, 0.6, -0.1, -0.15);
 
     gunView.traverse(function (o) { if (o.isMesh) o.castShadow = false; });
-  })();
+  }
+  buildProceduralGunView();
   gunView.position.set(GUN_REST.x, GUN_REST.y, GUN_REST.z);
-  gunView.rotation.y = -0.08;
+  // 注意：这里不再加一个额外的固定偏转角——之前 rotation.y=-0.08 让枪身长期跟相机前方
+  // 存在一个恒定夹角，无论远近弹道视觉上都会跟枪口对不上；现在枪身局部前方严格对齐相机前方，
+  // 子弹弹道从枪口位置发出后自然收敛到准星命中点，不会再出现"打出去的方向跟枪管指向不一致"
   camera.add(gunView);
   var gunRecoil = 0;
+
+  // GLTF 真实枪械模型加载成功后会整体替换掉上面的几何体拼接后备枪；模型原始朝向沿本地 +X 是枪口方向，
+  // 转 90° 让它对齐 gunView（进而对齐相机）的本地 -Z 前方
+  var GUN_MODEL_SCALE = 0.4;
+  var GUN_MODEL_MUZZLE_LOCAL = { x: 0.93, y: -0.02, z: 0 }; // 枪口尖端在模型自身（缩放/旋转前）坐标系里的大致位置
+  function loadGunModel() {
+    var gunLoader = new THREE.GLTFLoader();
+    gunLoader.load("gun.glb", function (gltf) {
+      var model = gltf.scene;
+      model.scale.setScalar(GUN_MODEL_SCALE);
+      model.rotation.y = -Math.PI / 2;
+      model.traverse(function (o) { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
+      while (gunView.children.length) gunView.remove(gunView.children[0]);
+      gunView.add(model);
+      var tip = new THREE.Object3D();
+      tip.position.set(GUN_MODEL_MUZZLE_LOCAL.x, GUN_MODEL_MUZZLE_LOCAL.y, GUN_MODEL_MUZZLE_LOCAL.z);
+      model.add(tip);
+      muzzleTip = tip; // shoot()/spawnMuzzleFlash() 等都通过闭包引用这个变量，整体换掉引用即可同步生效
+    }, undefined, function (err) {
+      console.warn("枪械模型加载失败，继续使用几何体拼接的后备枪械", err);
+    });
+  }
+  loadGunModel();
 
   /* ---------------- 玩家全身模型（第三人称视角用） ---------------- */
   var playerBody = new THREE.Group();
@@ -1096,6 +1126,10 @@
   var tpFollowYaw = 0; // 跟随视角的轨道角度，带一点跟随延迟，避免快速甩视角时镜头突然大幅度甩到人物另一侧
   var tpCurrentDistance = TP_DISTANCE;
   var tpInited = false;
+  // 人物模型的朝向：移动时跟着实际移动方向转（不是死板地永远对着镜头方向），
+  // 不然按 S 后退/按 A、D 平移时，身体还是对着镜头方向，但跑步动画播的是"向前跑"的腿部动作，
+  // 视觉上人就会像在原地滑步/太空步一样诡异——这正是第三人称"不协调"的主因
+  var bodyYaw = 0, bodyYawInited = false;
 
   function toggleViewMode() {
     viewMode = viewMode === "fp" ? "tp" : "fp";
@@ -1112,7 +1146,7 @@
   var tpSidePivot = new THREE.Vector3();
   function updateThirdPerson(dt) {
     playerBody.position.set(camera.position.x, feetY, camera.position.z);
-    playerBody.rotation.y = yaw;
+    playerBody.rotation.y = bodyYaw;
     if (viewMode !== "tp") return;
     tpCamera.fov = camera.fov;
     tpCamera.aspect = camera.aspect;
@@ -1155,7 +1189,7 @@
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 软阴影，边缘不再是硬邦邦的锯齿块
   // sRGB 输出 + 色调映射，画面对比度和色彩会明显丰富一些
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1169,6 +1203,10 @@
   composer.addPass(renderPass);
   var bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.55, 0.82);
   composer.addPass(bloomPass);
+  // 后处理链路会绕开 WebGLRenderer 自带的 antialias（离屏渲染目标默认没有多重采样），
+  // 边缘容易出现锯齿；加一道 SMAA 在最后把边缘抗锯齿补回来，比开多重采样渲染目标更省性能
+  var smaaPass = new THREE.SMAAPass(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+  composer.addPass(smaaPass);
 
   var hemiLight = new THREE.HemisphereLight(weather.hemiSky, weather.hemiGround, weather.hemiIntensity);
   scene.add(hemiLight);
@@ -1306,8 +1344,40 @@
     return tex;
   }
 
-  var groundTex = makeNoiseTexture("#23212f", 512, "#191824", "#332f42", 5000);
+  // 科技感地板：暗色面板 + 淡青色缝线纹理直接烘进贴图（替代原来单独一层 GridHelper 网格线），
+  // 缝线同时烘一份到 emissiveMap 里，配合 Bloom 会有一圈很淡的辉光，比纯几何线框更有质感
+  function makeTechFloorTexture(size, emissive) {
+    var canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = emissive ? "#000000" : "#12111c";
+    ctx.fillRect(0, 0, size, size);
+    if (!emissive) {
+      for (var i = 0; i < size * size * 0.018; i++) {
+        ctx.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.06)";
+        ctx.fillRect(Math.random() * size, Math.random() * size, 1.4, 1.4);
+      }
+    }
+    var cell = size / 6;
+    ctx.strokeStyle = emissive ? "#00e5ff" : "rgba(0, 229, 255, 0.4)";
+    ctx.lineWidth = emissive ? 1.6 : 1.2;
+    if (emissive) { ctx.shadowColor = "#00e5ff"; ctx.shadowBlur = 6; }
+    for (var gx = 0; gx <= size; gx += cell) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, size); ctx.stroke();
+    }
+    for (var gy = 0; gy <= size; gy += cell) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(size, gy); ctx.stroke();
+    }
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+  var groundTex = makeTechFloorTexture(512, false);
   groundTex.repeat.set(48, 48);
+  var groundEmissiveTex = makeTechFloorTexture(512, true);
+  groundEmissiveTex.repeat.set(48, 48);
   var metalTex = makeNoiseTexture("#363b47", 256, "#262a34", "#5a6478", 1800);
   metalTex.repeat.set(2, 2);
   var concreteTex = makeNoiseTexture("#48465a", 256, "#38364a", "#5e5c74", 1600);
@@ -1319,19 +1389,21 @@
 
   var ground = new THREE.Mesh(
     new THREE.PlaneGeometry(ARENA, ARENA),
-    new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({
+      map: groundTex, roughness: 0.5, metalness: 0.4,
+      emissiveMap: groundEmissiveTex, emissive: 0x00e5ff, emissiveIntensity: 0.3,
+    })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  var grid = new THREE.GridHelper(ARENA, 44, 0x1f8fa8, 0x2a2440);
-  grid.material.opacity = 0.18;
-  grid.material.transparent = true;
-  scene.add(grid);
-
   /* ---------------- 掩体 / 建筑（含碰撞盒） ---------------- */
   var obstacles = [];
+  // 屋顶一类"可以站上去但不该挡子弹/挡视线"的悬空平面单独放这里：
+  // isClear / groundHeightAt 两个走路用的判定会把它们也算进去，但子弹弹道判定和敌人视线判定
+  // （两者都只读 obstacles）不会受影响，不然屋顶一旦能挡墙就会连带挡住隔墙打过去的子弹/AI 视线
+  var walkableTops = [];
   var beacons = [];
   function addObstacle(w, h, d, x, z, material, rotY) {
     var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
@@ -1395,7 +1467,8 @@
     localWall(wallT, wallH, d, -w / 2, 0);
     localWall(wallT, wallH, d, w / 2, 0);
 
-    // 屋顶（纯装饰，不参与碰撞/遮挡射线，避免挡住俯视/远处视线判定）
+    // 屋顶：不挡子弹/不挡视线（不进 obstacles，射线/AI 相关判定不会碰到它），
+    // 但登记进 walkableTops 让人可以跳上去站住，而不是像之前那样一跳上去就直接摔穿掉进室内地面高度
     var roof = new THREE.Mesh(
       new THREE.BoxGeometry(w + 1, 0.4, d + 1),
       new THREE.MeshStandardMaterial({ map: rustTex, roughness: 0.85 })
@@ -1403,6 +1476,8 @@
     roof.position.set(0, wallH + 0.2, 0);
     roof.castShadow = true;
     group.add(roof);
+    group.updateMatrixWorld(true);
+    walkableTops.push({ mesh: roof, box: new THREE.Box3().setFromObject(roof) });
 
     // 屋顶警示灯：常年废弃工厂里还亮着的一盏霓虹应急灯，青/品红随机，增加赛博夜色氛围
     var beaconColor = Math.random() < 0.5 ? 0x00e5ff : 0xff2f6d;
@@ -1425,6 +1500,104 @@
   buildFactory(-70, -55, 0, 30, 20);
   buildFactory(65, -60, Math.PI / 2, 26, 18);
   buildFactory(-10, 65, Math.PI, 34, 22);
+
+  /* ---------------- CS 经典地图风格的白房子群：平房 + 二层楼，跟锈蚀工厂拉开材质/体量差异 ---------------- */
+  var plasterTex = makeNoiseTexture("#d8d2c4", 256, "#c7c0ae", "#eae4d6", 1400);
+  plasterTex.repeat.set(2.4, 1.6);
+  var plasterMat = new THREE.MeshStandardMaterial({ map: plasterTex, roughness: 0.8 });
+  var houseRoofMat = new THREE.MeshStandardMaterial({ color: 0xb7ad94, roughness: 0.75 });
+
+  // 单层白房子：矮墙 + 平顶，门口留缺口，体量比工厂小很多，用来填充地图中近距离交火的巷战空间
+  function buildHouse(cx, cz, rotY, w, d) {
+    var group = new THREE.Group();
+    group.position.set(cx, 0, cz);
+    group.rotation.y = rotY;
+    scene.add(group);
+
+    var wallH = 3.2, wallT = 0.5, doorGap = 2.2;
+    function localWall(lw, lh, ld, lx, lz, ly) {
+      var mesh = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), plasterMat);
+      mesh.position.set(lx, (ly !== undefined ? ly : lh / 2), lz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      group.updateMatrixWorld(true);
+      obstacles.push({ mesh: mesh, box: new THREE.Box3().setFromObject(mesh) });
+    }
+    var frontSeg = (w - doorGap) / 2;
+    localWall(frontSeg, wallH, wallT, -(doorGap / 2 + frontSeg / 2), d / 2);
+    localWall(frontSeg, wallH, wallT, (doorGap / 2 + frontSeg / 2), d / 2);
+    localWall(w, wallH, wallT, 0, -d / 2);
+    localWall(wallT, wallH, d, -w / 2, 0);
+    localWall(wallT, wallH, d, w / 2, 0);
+    // 窗洞两侧留矮墙垛意思一下，不做真正镂空（保持轴对齐碰撞盒简单可靠）
+    localWall(w * 0.8, 0.5, wallT, 0, d / 2, wallH - 0.3);
+
+    var roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.3, d + 0.6), houseRoofMat);
+    roof.position.set(0, wallH + 0.15, 0);
+    roof.castShadow = true;
+    group.add(roof);
+    group.updateMatrixWorld(true);
+    walkableTops.push({ mesh: roof, box: new THREE.Box3().setFromObject(roof) });
+    return group;
+  }
+
+  // 两层白房子：一楼墙 + 二楼墙叠起来，二楼墙体内收一圈露出一条"阳台"窗台线，视觉上明确读出两层楼，
+  // 顶部同样登记为可站立平面——配合跳跃修复，二楼顶是很自然的制高点狙击位
+  function buildTwoStory(cx, cz, rotY, w, d) {
+    var group = new THREE.Group();
+    group.position.set(cx, 0, cz);
+    group.rotation.y = rotY;
+    scene.add(group);
+
+    var floorH = 3.0, wallT = 0.5, doorGap = 2.4;
+    function localWall(lw, lh, ld, lx, ly, lz) {
+      var mesh = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), plasterMat);
+      mesh.position.set(lx, ly, lz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      group.updateMatrixWorld(true);
+      obstacles.push({ mesh: mesh, box: new THREE.Box3().setFromObject(mesh) });
+    }
+    // 一楼：正面留门缺口
+    var frontSeg = (w - doorGap) / 2;
+    localWall(frontSeg, floorH, wallT, -(doorGap / 2 + frontSeg / 2), floorH / 2, d / 2);
+    localWall(frontSeg, floorH, wallT, (doorGap / 2 + frontSeg / 2), floorH / 2, d / 2);
+    localWall(w, floorH, wallT, 0, floorH / 2, -d / 2);
+    localWall(wallT, floorH, d, -w / 2, floorH / 2, 0);
+    localWall(wallT, floorH, d, w / 2, floorH / 2, 0);
+    // 楼板（可以从一楼内部当天花板，也是二楼的地板，用同一块 box 兼顾两种视觉）
+    var slab = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.3, d + 0.3), houseRoofMat);
+    slab.position.set(0, floorH + 0.15, 0);
+    slab.castShadow = true;
+    group.add(slab);
+    // 二楼：整圈墙体，正面留个窗洞形状的缺口（用两段矮墙夹出一个大窗）
+    var winGap = doorGap + 1.2;
+    var frontSeg2 = (w - winGap) / 2;
+    var wallH2 = floorH + 2.6;
+    localWall(frontSeg2, floorH, wallT, -(winGap / 2 + frontSeg2 / 2), wallH2 - floorH / 2, d / 2);
+    localWall(frontSeg2, floorH, wallT, (winGap / 2 + frontSeg2 / 2), wallH2 - floorH / 2, d / 2);
+    localWall(w, floorH, wallT, 0, wallH2 - floorH / 2, -d / 2);
+    localWall(wallT, floorH, d, -w / 2, wallH2 - floorH / 2, 0);
+    localWall(wallT, floorH, d, w / 2, wallH2 - floorH / 2, 0);
+
+    var roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.3, d + 0.6), houseRoofMat);
+    roof.position.set(0, wallH2 + 0.15, 0);
+    roof.castShadow = true;
+    group.add(roof);
+    group.updateMatrixWorld(true);
+    walkableTops.push({ mesh: roof, box: new THREE.Box3().setFromObject(roof) });
+    // 楼板本身也能站（比如从窗口跳进二楼），一并登记
+    walkableTops.push({ mesh: slab, box: new THREE.Box3().setFromObject(slab) });
+    return group;
+  }
+
+  buildHouse(20, -30, 0, 12, 10);
+  buildHouse(-45, 20, Math.PI / 2, 11, 9);
+  buildHouse(50, 40, 0, 13, 10);
+  buildTwoStory(-25, -75, Math.PI / 2, 16, 13);
+  buildTwoStory(85, 10, Math.PI, 15, 12);
 
   /* ---------------- 储罐 / 集装箱等工业细节 ---------------- */
   function addTank(x, z, r, h) {
@@ -1609,25 +1782,47 @@
     addObstacle(w, h, d, x, z, mat, (Math.floor(Math.random() * 4) * Math.PI) / 2);
   }
 
-  // feetY 可选：如果脚部高度已经不低于某个障碍物顶面（差一点误差内），就当作"已经站在它上面"，
-  // 不再把这个障碍物当墙挡住——这样跳跃/站上掩体顶部才有意义；不传 feetY 的调用（找空位、生成道具等）
-  // 完全保持原来"只看 XZ footprint"的行为，不受影响
+  var PLAYER_HEIGHT = 1.85; // 判断能否从高处障碍物（比如工厂屋顶）下方穿过用，比视线高度 EYE_H 留一点余量
+  var GROUND_REACH_MARGIN = 1.4; // 略大于最大跳跃高度：只把"够得着"的平面当作可能的落脚点，不然远高于头顶的屋顶会被当成地面直接把人吸上去
+
+  // feetY 可选：
+  // - 如果脚部高度已经不低于某个障碍物顶面（差一点误差内），当作"已经站在它上面"，不拿它当墙挡；
+  // - 如果头顶高度已经完全在障碍物底面以下，当作"从它下方穿过"，同样不拿它当墙挡——
+  //   这样屋顶这类悬空的大块碰撞体才能既挡住"跳上去"，又不挡住"从底下走进建筑"；
+  // 不传 feetY 的调用（AI 寻路目标点、道具生成点等）按贴地（feetY=0）处理，同样能穿过悬空障碍物下方
   function isClear(x, z, r, feetY) {
+    var effFeetY = feetY === undefined ? 0 : feetY;
     for (var i = 0; i < obstacles.length; i++) {
       var b = obstacles[i].box;
       if (x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r) {
-        if (feetY !== undefined && feetY >= b.max.y - 0.12) continue;
+        if (effFeetY >= b.max.y - 0.12) continue;
+        if (effFeetY + PLAYER_HEIGHT <= b.min.y + 0.05) continue;
+        return false;
+      }
+    }
+    for (var j = 0; j < walkableTops.length; j++) {
+      var wb = walkableTops[j].box;
+      if (x > wb.min.x - r && x < wb.max.x + r && z > wb.min.z - r && z < wb.max.z + r) {
+        if (effFeetY >= wb.max.y - 0.12) continue;
+        if (effFeetY + PLAYER_HEIGHT <= wb.min.y + 0.05) continue;
         return false;
       }
     }
     return true;
   }
-  // 某个 XZ 位置正下方能站的最高平面（掩体顶面或者地面本身），用来算跳跃落地高度/是否踩空掉落
-  function groundHeightAt(x, z) {
+  // 某个 XZ 位置正下方能站的最高平面（掩体顶面或者地面本身），用来算跳跃落地高度/是否踩空掉落。
+  // refY 传当前脚部高度：只有"够得着"（refY + 一点跳跃余量之内）的平面才算数，
+  // 避免远高于头顶、只是纯粹装饰用不到的屋顶被当成"地面"，把走在建筑内部地面上的人直接吸到屋顶高度
+  function groundHeightAt(x, z, refY) {
+    var limit = refY === undefined ? Infinity : refY + GROUND_REACH_MARGIN;
     var h = 0;
     for (var i = 0; i < obstacles.length; i++) {
       var b = obstacles[i].box;
-      if (x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && b.max.y > h) h = b.max.y;
+      if (x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && b.max.y > h && b.max.y <= limit) h = b.max.y;
+    }
+    for (var j = 0; j < walkableTops.length; j++) {
+      var wb = walkableTops[j].box;
+      if (x > wb.min.x && x < wb.max.x && z > wb.min.z && z < wb.max.z && wb.max.y > h && wb.max.y <= limit) h = wb.max.y;
     }
     return h;
   }
@@ -1637,15 +1832,18 @@
     var mountainMat = new THREE.MeshStandardMaterial({ color: 0x6d7566, roughness: 1, flatShading: true, fog: true });
     var count = 30;
     var ringR = HALF + 60;
+    // 山体底面半径（mw）之前最大能到 70，但相邻两座山沿环形分布的间距只有约 35——
+    // 底面比间距还宽，必然大面积互相戳穿。缩小底面半径、收紧半径抖动范围，
+    // 让相邻山峰只是自然地"肩并肩"衔接（轻微搭边形成连绵山脊），不再大段穿模
     for (var i = 0; i < count; i++) {
       var ang = (i / count) * Math.PI * 2 + rr(-0.12, 0.12);
-      var r = ringR + rr(-18, 30);
+      var r = ringR + rr(-10, 16);
       var mh = rr(34, 78);
-      var mw = rr(38, 70);
+      var mw = rr(14, 26);
       var mesh = new THREE.Mesh(new THREE.ConeGeometry(mw, mh, 5 + ((Math.random() * 3) | 0)), mountainMat);
       mesh.position.set(Math.sin(ang) * r, mh / 2 - 6, Math.cos(ang) * r);
       mesh.rotation.y = rr(0, Math.PI * 2);
-      mesh.scale.x = rr(0.75, 1.35);
+      mesh.scale.x = rr(0.9, 1.15);
       scene.add(mesh);
     }
   })();
@@ -2241,9 +2439,11 @@
   }
   updateAmmoUI();
 
+  var reloadStartTime = 0; // 第一人称换弹动作（枪身下压+回摆）按这个时间戳算播放进度，跟骨骼装弹动作分开、互不影响
   function startReload() {
     if (isReloading || currentAmmo === MAG_SIZE || !gameActive) return;
     isReloading = true;
+    reloadStartTime = performance.now();
     updateAmmoUI();
     playReload();
     triggerReloadAnim(playerAnimState);
@@ -2450,10 +2650,12 @@
 
   /* ---------------- 骨骼动画播放 + 命中判定盒跟随骨骼位置 ---------------- */
   var __hitboxWorldPos = new THREE.Vector3();
-  // fire / reload / jump / prone_turn 都是"播一次就完事"的动作，正在播的时候不要被下面的走跑待机逻辑打断
+  // fire / reload / prone_turn 都是"播一次就完事"的动作，正在播的时候不要被下面的走跑待机逻辑打断；
+  // jump 不放在这里——它的收尾由物理落地（playerJumping 变 false）直接决定，不受动作片段自身时长限制，
+  // 不然片段比实际滞空时间长的话，人物明明已经落地了，画面还在悬空播完剩下的跳跃动作才切回跑动
   function isOneShotActive(st) {
     var name = st.current;
-    if (name !== "fire" && name !== "reload" && name !== "jump" && name !== "prone_turn") return false;
+    if (name !== "fire" && name !== "reload" && name !== "prone_turn") return false;
     var act = st.actions[name];
     if (!act) return false;
     return act.isRunning() && act.time < act.getClip().duration - 0.03;
@@ -2834,9 +3036,9 @@
     scopeBtn.classList.toggle("scoping", isScoped);
   }
   var scopeBtn = document.getElementById("scope-btn");
-  scopeBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); setScoped(true); }, { passive: false });
-  scopeBtn.addEventListener("touchend", function (ev) { ev.preventDefault(); setScoped(false); }, { passive: false });
-  scopeBtn.addEventListener("touchcancel", function () { setScoped(false); });
+  // 移动端做成点一下开镜、再点一下关镜（跟其他触屏按钮的单击操作习惯一致）；
+  // 之前是"按住不放"，手指快速点一下的话开镜和关镜几乎同时触发，视觉上像完全没反应
+  scopeBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); setScoped(!isScoped); }, { passive: false });
   canvas.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
   document.addEventListener("mousedown", function (ev) {
     if (ev.button !== 2 || isTouch || document.pointerLockElement !== canvas) return;
@@ -2881,12 +3083,30 @@
     if (len > 0.001) {
       var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
       var rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      attemptMove((fx * fwd + rx * right) * MOVE_SPEED * dt, (fz * fwd + rz * right) * MOVE_SPEED * dt);
+      var moveDirX = fx * fwd + rx * right, moveDirZ = fz * fwd + rz * right;
+      attemptMove(moveDirX * MOVE_SPEED * dt, moveDirZ * MOVE_SPEED * dt);
+      // 身体转向实际移动方向（不是镜头方向）：后退/平移时人物会自然转身、正面朝着前进方向，
+      // 跑步动画才不会跟位移对不上看起来像滑步
+      var targetBodyYaw = Math.atan2(-moveDirX, -moveDirZ);
+      if (!bodyYawInited) { bodyYaw = targetBodyYaw; bodyYawInited = true; }
+      var bodyYawDiff = targetBodyYaw - bodyYaw;
+      bodyYawDiff = ((bodyYawDiff % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      bodyYaw += bodyYawDiff * Math.min(dt * 12, 1);
+    } else if (!bodyYawInited) {
+      bodyYaw = yaw;
+      bodyYawInited = true;
+    } else {
+      // 站定不动时身体慢慢转回跟镜头一致的朝向（贴近"站桩瞄准"的直觉）
+      var idleYawDiff = yaw - bodyYaw;
+      idleYawDiff = ((idleYawDiff % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      bodyYaw += idleYawDiff * Math.min(dt * 5, 1);
     }
 
     var isMoving = len > 0.05;
     playerMoving = isMoving;
-    playerSpeedTier = len > 0.6 ? "run" : "walk";
+    // 走/跑切换的阈值带一点滞回（上切 0.6 / 下切 0.4）：触屏摇杆推到临界值附近会有细微抖动，
+    // 用同一个阈值上下切的话动作会跟着来回切换、交叉淡入淡出反复打断，看起来就是"卡帧"
+    playerSpeedTier = len > 0.6 ? "run" : (len < 0.4 ? "walk" : playerSpeedTier);
     if (isMoving) {
       bobTime += dt * BOB_FREQ * Math.max(len, 0.4);
       if (isGrounded) {
@@ -2902,7 +3122,7 @@
     // 落地点如果是掩体顶部也会稳稳站上去，而不是固定摔回地面高度 0
     jumpVelocity += GRAVITY * dt;
     var nextFeetY = feetY + jumpVelocity * dt;
-    var groundY = groundHeightAt(camera.position.x, camera.position.z);
+    var groundY = groundHeightAt(camera.position.x, camera.position.z, feetY);
     if (nextFeetY <= groundY) {
       if (!isGrounded && jumpVelocity < -3) {
         // 摔落速度越快，落地那一下沉得越明显，配合落地音效才有"踩实了"的感觉
@@ -2921,13 +3141,19 @@
     // 仅上下起伏，不做左右滚转，避免整屏晃动导致眩晕
     camera.position.y = feetY + EYE_H - landDip + (isMoving && isGrounded ? Math.abs(Math.sin(bobTime)) * BOB_AMP : 0);
 
-    // 枪械视图模型：随移动轻微摆动 + 开火后坐力回弹
+    // 枪械视图模型：随移动轻微摆动 + 开火后坐力回弹 + 换弹时的下压/回摆动作
     gunRecoil *= Math.exp(-dt * 12);
+    // 换弹动作之前只在第三人称骨骼模型上播（triggerReloadAnim），第一人称枪械视图完全没有动作、
+    // 弹药却凭空变满，看起来很奇怪——这里用一个 0→1→0 的抛物线状进度（sin 曲线）驱动枪身下压+侧倾+回正，
+    // 时长跟 RELOAD_MS 对齐，不需要额外的动画系统
+    var reloadT = isReloading ? Math.min(1, (performance.now() - reloadStartTime) / RELOAD_MS) : 0;
+    var reloadArc = Math.sin(reloadT * Math.PI);
     // 枪的摆动要跟镜头/脚步用同一个 bobTime 相位，之前 y 轴用了 2 倍频率，跟跑步节奏对不上
-    gunView.position.x = GUN_REST.x + (isMoving ? Math.cos(bobTime) * 0.01 : 0);
-    gunView.position.y = GUN_REST.y + (isMoving ? Math.abs(Math.sin(bobTime)) * 0.014 : 0) + gunRecoil * 0.01;
+    gunView.position.x = GUN_REST.x + (isMoving ? Math.cos(bobTime) * 0.01 : 0) - reloadArc * 0.05;
+    gunView.position.y = GUN_REST.y + (isMoving ? Math.abs(Math.sin(bobTime)) * 0.014 : 0) + gunRecoil * 0.01 - reloadArc * 0.17;
     gunView.position.z = GUN_REST.z + gunRecoil * 0.12;
-    gunView.rotation.x = gunRecoil * 0.22;
+    gunView.rotation.x = gunRecoil * 0.22 + reloadArc * 0.5;
+    gunView.rotation.z = reloadArc * 0.35;
 
     var targetFov = isScoped ? SCOPE_FOV : (isMoving ? RUN_FOV : BASE_FOV);
     var nextFov = camera.fov + (targetFov - camera.fov) * Math.min(dt * (isScoped ? 10 : 6), 1);

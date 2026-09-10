@@ -2,23 +2,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/MaskPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <style>
   :root {
-    --bg: #15140f;
-    --panel: #211f18;
-    --panel-2: #2a271c;
-    --ink: #f0e9d8;
-    --ink-dim: #a89a7c;
-    --accent: #e0872f;
-    --accent-dim: #8a5a24;
-    --olive: #5c6b3f;
-    --danger: #c8432f;
-    --rule: #4a4634;
+    --bg: #08061a;
+    --panel: #130f2a;
+    --panel-2: #1b1440;
+    --ink: #dff6ff;
+    --ink-dim: #7f8cc4;
+    --accent: #00e5ff;
+    --accent-dim: #0a7a94;
+    --olive: #c026ff;
+    --danger: #ff2f6d;
+    --rule: #2e2358;
     font-variant-numeric: tabular-nums;
   }
 
@@ -95,7 +102,7 @@
     font-weight: 700;
     letter-spacing: 0.1em;
     color: var(--danger);
-    text-shadow: 0 0 12px rgba(200, 67, 47, 0.7);
+    text-shadow: 0 0 12px rgba(255, 47, 109, 0.75);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s ease, transform 0.15s ease;
@@ -111,11 +118,45 @@
     inset: 0;
     z-index: 22;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 40, 30, 0.55) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 20, 90, 0.55) 100%);
     opacity: 0;
     transition: opacity 0.25s ease;
   }
   #hit-flash.show { opacity: 1; transition: opacity 0.03s ease; }
+
+  /* 倍镜：经典的"圆形窥孔"做法——用一圈巨大的 box-shadow 把圆孔以外的地方全部涂黑 */
+  #scope-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(60vh, 60vw);
+    height: min(60vh, 60vw);
+    margin-left: calc(min(60vh, 60vw) / -2);
+    margin-top: calc(min(60vh, 60vw) / -2);
+    border-radius: 50%;
+    box-shadow: 0 0 0 9999px #08061a;
+    border: 2px solid rgba(10, 10, 10, 0.7);
+    z-index: 24;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  #scope-overlay.show { opacity: 1; }
+  .scope-line {
+    position: absolute;
+    background: rgba(15, 14, 10, 0.8);
+  }
+  .scope-h { top: 50%; left: 8%; right: 8%; height: 1.5px; transform: translateY(-50%); }
+  .scope-v { left: 50%; top: 8%; bottom: 8%; width: 1.5px; transform: translateX(-50%); }
+  .scope-dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 5px; height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: rgba(15, 14, 10, 0.85);
+  }
+  #reticle.hidden-by-scope { display: none; }
 
   /* 受击方向提示：一个指向伤害来源方位的箭头，围绕屏幕中心旋转定位 */
   #dmg-indicators {
@@ -127,35 +168,25 @@
     z-index: 23;
     pointer-events: none;
   }
-  .dmg-arrow {
+  /* 圆润的柔光团代替原来的硬边三角箭头，朝伤害来源方向淡入淡出，观感更自然。
+     外层 .dmg-arrow 只负责定位（旋转到方位角 + 推到屏幕边缘，内联 style 设置），
+     缩放/淡出动画放在内层 .dmg-arrow-glow 自己的 transform 上，两者互不冲突 */
+  .dmg-arrow { position: absolute; top: 0; left: 0; width: 0; height: 0; }
+  .dmg-arrow-glow {
     position: absolute;
     top: 0; left: 0;
-    width: 26px;
-    height: 26px;
-    margin: -13px 0 0 -13px;
+    width: 64px;
+    height: 64px;
+    margin: -32px 0 0 -32px;
     opacity: 0;
-  }
-  .dmg-arrow.show {
-    opacity: 1;
-    animation: dmg-arrow-fade 0.9s ease-out forwards;
-  }
-  .dmg-arrow::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 4px;
-    width: 0;
-    height: 0;
-    transform: translateX(-50%);
-    border-left: 9px solid transparent;
-    border-right: 9px solid transparent;
-    border-bottom: 16px solid var(--danger);
-    filter: drop-shadow(0 0 4px rgba(200, 67, 47, 0.8));
+    border-radius: 50%;
+    background: radial-gradient(ellipse 60% 100% at 50% 30%, rgba(255, 90, 160, 0.9) 0%, rgba(255, 30, 110, 0.45) 45%, rgba(255, 30, 110, 0) 75%);
+    animation: dmg-arrow-fade 1s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
   }
   @keyframes dmg-arrow-fade {
-    0% { opacity: 0.95; }
-    70% { opacity: 0.85; }
-    100% { opacity: 0; }
+    0% { opacity: 0; transform: scale(0.7) translateY(0); }
+    18% { opacity: 1; transform: scale(1) translateY(0); }
+    100% { opacity: 0; transform: scale(1.1) translateY(6px); }
   }
 
   /* ---------------- HUD 状态条 ---------------- */
@@ -249,8 +280,8 @@
     overflow-y: auto;
     padding: 3vh 5vw;
     background:
-      radial-gradient(ellipse 80% 60% at 30% 45%, rgba(224, 135, 47, 0.10), transparent 60%),
-      linear-gradient(160deg, #0e0d09 0%, #17150f 55%, #1c1a12 100%);
+      radial-gradient(ellipse 80% 60% at 30% 45%, rgba(0, 229, 255, 0.10), transparent 60%),
+      linear-gradient(160deg, #0a0718 0%, #150f2c 55%, #1c1440 100%);
     cursor: pointer;
   }
   #overlay.hidden { display: none; }
@@ -296,13 +327,14 @@
   }
 
   #brief h1 {
+    font-family: "Orbitron", "Rajdhani", sans-serif;
     font-size: clamp(28px, 6vw, 64px);
     font-weight: 900;
-    line-height: 1.05;
-    letter-spacing: 0.04em;
+    line-height: 1.1;
+    letter-spacing: 0.06em;
     text-wrap: balance;
     color: var(--ink);
-    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 0 6px rgba(0, 229, 255, 0.55), 0 0 26px rgba(0, 229, 255, 0.35), 0 2px 24px rgba(0, 0, 0, 0.6);
   }
 
   .brief-rule {
@@ -361,7 +393,7 @@
     clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
     cursor: pointer;
   }
-  #start-btn:active { background: #c66f22; }
+  #start-btn:active { background: #00a8c2; }
 
   body.is-touch .desktop-only { display: none; }
   body.is-touch .mobile-only { display: flex; }
@@ -391,14 +423,14 @@
     justify-content: center;
     text-align: center;
     background:
-      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(224, 135, 47, 0.10), transparent 60%),
-      linear-gradient(160deg, #0e0d09 0%, #17150f 55%, #1c1a12 100%);
+      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0, 229, 255, 0.10), transparent 60%),
+      linear-gradient(160deg, #0a0718 0%, #150f2c 55%, #1c1440 100%);
   }
   #end-screen.hidden { display: none; }
   #end-screen.lose {
     background:
-      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(200, 67, 47, 0.14), transparent 60%),
-      linear-gradient(160deg, #120c0a 0%, #17110f 55%, #1c1512 100%);
+      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255, 47, 109, 0.16), transparent 60%),
+      linear-gradient(160deg, #0f0616 0%, #1a0e2a 55%, #221238 100%);
   }
   .end-eyebrow {
     font-family: "Rajdhani", sans-serif;
@@ -444,7 +476,7 @@
     clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
     cursor: pointer;
   }
-  #restart-btn:active { background: #c66f22; }
+  #restart-btn:active { background: #00a8c2; }
 
   /* ---------------- 竖屏提示 ---------------- */
   #rotate-hint {
@@ -513,7 +545,7 @@
     height: 52px;
     margin: -26px 0 0 -26px;
     border-radius: 50%;
-    background: rgba(224, 135, 47, 0.4);
+    background: rgba(0, 229, 255, 0.35);
     border: 2px solid var(--accent);
   }
 
@@ -551,7 +583,7 @@
   #fire-btn:active, #fire-btn.firing,
   #fire-btn-left:active, #fire-btn-left.firing {
     background: radial-gradient(circle at 50% 62%, #fff2b0 0%, #ffc23c 26%, #ff8a1f 52%, #d43a1f 78%, #8f1f14 100%);
-    border-color: #ffb347;
+    border-color: #4df3ff;
     box-shadow: 0 0 18px rgba(255, 120, 30, 0.55);
     color: #2a0d02;
     filter: grayscale(0) brightness(1.15);
@@ -573,7 +605,7 @@
     padding: 0;
     border-radius: 50%;
     background: rgba(33, 31, 24, 0.78);
-    border: 2px solid #8a6a2f;
+    border: 2px solid #7a6a10;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -583,8 +615,8 @@
   #reload-btn svg { width: 76%; height: 76%; overflow: visible; }
   #reload-btn:active,
   #reload-btn.reloading-active {
-    background: rgba(224, 135, 47, 0.4);
-    border-color: #ffb347;
+    background: rgba(0, 229, 255, 0.35);
+    border-color: #4df3ff;
   }
 
   /* 视角切换按钮 */
@@ -605,7 +637,27 @@
     pointer-events: auto;
     z-index: 31;
   }
-  #view-btn:active { background: rgba(224, 135, 47, 0.4); }
+  #view-btn:active { background: rgba(0, 229, 255, 0.35); }
+
+  /* 倍镜按钮 */
+  #scope-btn {
+    position: absolute;
+    right: 178px;
+    bottom: 192px;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(33, 31, 24, 0.7);
+    border: 2px solid var(--ink-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 31;
+  }
+  #scope-btn svg { width: 70%; height: 70%; }
+  #scope-btn:active, #scope-btn.scoping { background: rgba(0, 229, 255, 0.35); border-color: #4df3ff; }
 
   /* 跳跃按钮：向上的箭头 + 底部一道弧线暗示起跳弹起，常见射击游戏的跳跃图标画法 */
   #jump-btn {
@@ -625,13 +677,18 @@
     z-index: 31;
   }
   #jump-btn svg { width: 58%; height: 58%; overflow: visible; }
-  #jump-btn:active { background: rgba(224, 135, 47, 0.4); border-color: #ffb347; }
+  #jump-btn:active { background: rgba(0, 229, 255, 0.35); border-color: #4df3ff; }
 </style>
 
 <div id="stage"></div>
 
 <div id="hit-flash"></div>
 <div id="dmg-indicators"></div>
+<div id="scope-overlay">
+  <div class="scope-line scope-h"></div>
+  <div class="scope-line scope-v"></div>
+  <div class="scope-dot"></div>
+</div>
 
 <div id="reticle">
   <span class="reticle-dash rd-top"></span>
@@ -720,9 +777,9 @@
   <button id="fire-btn-left" aria-label="开火">🔥</button>
   <button id="reload-btn" aria-label="换弹">
     <svg viewBox="0 0 48 48">
-      <path d="M 35 13 A 17 17 0 1 1 13 13" stroke="#e0b95c" stroke-width="3.4" fill="none" stroke-linecap="round" />
-      <polygon points="35,7.5 41.5,13.5 33,16" fill="#e0b95c" />
-      <g fill="#f2cf7f">
+      <path d="M 35 13 A 17 17 0 1 1 13 13" stroke="#ffe600" stroke-width="3.4" fill="none" stroke-linecap="round" />
+      <polygon points="35,7.5 41.5,13.5 33,16" fill="#ffe600" />
+      <g fill="#fff35c">
         <rect x="15" y="19" width="4.4" height="11" rx="2.2" />
         <rect x="21.8" y="18" width="4.4" height="12" rx="2.2" />
         <rect x="28.6" y="19" width="4.4" height="11" rx="2.2" />
@@ -731,10 +788,19 @@
   </button>
   <button id="fire-btn">🔥</button>
   <button id="view-btn" aria-label="切换视角">👁</button>
+  <button id="scope-btn" aria-label="倍镜瞄准">
+    <svg viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="15" stroke="#ffe600" stroke-width="3" fill="none" />
+      <line x1="24" y1="3" x2="24" y2="12" stroke="#ffe600" stroke-width="3" />
+      <line x1="24" y1="36" x2="24" y2="45" stroke="#ffe600" stroke-width="3" />
+      <line x1="3" y1="24" x2="12" y2="24" stroke="#ffe600" stroke-width="3" />
+      <line x1="36" y1="24" x2="45" y2="24" stroke="#ffe600" stroke-width="3" />
+    </svg>
+  </button>
   <button id="jump-btn" aria-label="跳跃">
     <svg viewBox="0 0 48 48">
-      <path d="M 24 7 L 36 19.5 L 28 19.5 L 28 30 L 20 30 L 20 19.5 L 12 19.5 Z" fill="#f2cf7f" />
-      <path d="M 11 37 Q 24 44 37 37" stroke="#e0b95c" stroke-width="3.2" fill="none" stroke-linecap="round" />
+      <path d="M 24 7 L 36 19.5 L 28 19.5 L 28 30 L 20 30 L 20 19.5 L 12 19.5 Z" fill="#fff35c" />
+      <path d="M 11 37 Q 24 44 37 37" stroke="#ffe600" stroke-width="3.2" fill="none" stroke-linecap="round" />
     </svg>
   </button>
 </div>
@@ -866,11 +932,14 @@
   var scene = new THREE.Scene();
 
   // 随机天气：影响天空颜色、雾效、光照强度，云层浓淡，下雨时额外加一层雨滴粒子
+  // 赛博夜色主题的四种天气：霓虹夜 / 浓雾夜 / 毒雾（经典赛博朋克污染雾霾）/ 赛博夜雨
+  // 天空/雾用深色调渲染夜晚氛围，但实际光照（sun/hemi）颜色要够亮，不然地面/掩体/敌人会糊成一片黑，
+  // 快节奏射击游戏可读性优先于纯写实的暗夜效果
   var WEATHER_PRESETS = {
-    clear: { skyTop: 0x3f7ac0, skyBottom: 0xd9ecf4, fogColor: 0xb9cdd6, fogNear: 70, fogFar: 260, sunColor: 0xffe6c2, sunIntensity: 1.15, hemiSky: 0xcfe0e8, hemiGround: 0x3a3628, hemiIntensity: 0.85, cloudOpacity: 0.5, cloudCount: 14, rain: false },
-    overcast: { skyTop: 0x848d92, skyBottom: 0xc7cdd0, fogColor: 0x9099a0, fogNear: 45, fogFar: 200, sunColor: 0xd7dbe0, sunIntensity: 0.55, hemiSky: 0xaab0b4, hemiGround: 0x322f28, hemiIntensity: 0.65, cloudOpacity: 0.85, cloudCount: 26, rain: false },
-    haze: { skyTop: 0x8f9482, skyBottom: 0xd8d0ac, fogColor: 0xb7ac86, fogNear: 32, fogFar: 165, sunColor: 0xffd9a0, sunIntensity: 0.8, hemiSky: 0xcdc7a0, hemiGround: 0x362c1e, hemiIntensity: 0.7, cloudOpacity: 0.4, cloudCount: 10, rain: false },
-    rain: { skyTop: 0x4c545c, skyBottom: 0x828c92, fogColor: 0x717a80, fogNear: 26, fogFar: 145, sunColor: 0xaab2b8, sunIntensity: 0.45, hemiSky: 0x8c959a, hemiGround: 0x26241f, hemiIntensity: 0.55, cloudOpacity: 0.9, cloudCount: 30, rain: true },
+    clear: { skyTop: 0x050415, skyBottom: 0x2c2060, fogColor: 0x2a2358, fogNear: 65, fogFar: 250, sunColor: 0xaecaff, sunIntensity: 1.35, hemiSky: 0xa9a0e8, hemiGround: 0x1c1836, hemiIntensity: 1, cloudOpacity: 0.45, cloudCount: 14, rain: false },
+    overcast: { skyTop: 0x110d1e, skyBottom: 0x3a3055, fogColor: 0x2f2840, fogNear: 40, fogFar: 190, sunColor: 0xb6b8e0, sunIntensity: 0.9, hemiSky: 0x9088c8, hemiGround: 0x181530, hemiIntensity: 0.85, cloudOpacity: 0.85, cloudCount: 26, rain: false },
+    haze: { skyTop: 0x141a0c, skyBottom: 0x4a5a20, fogColor: 0x596a2c, fogNear: 28, fogFar: 155, sunColor: 0xd8e88a, sunIntensity: 1.05, hemiSky: 0xb8cc72, hemiGround: 0x242410, hemiIntensity: 0.9, cloudOpacity: 0.5, cloudCount: 10, rain: false },
+    rain: { skyTop: 0x030308, skyBottom: 0x1c1436, fogColor: 0x201938, fogNear: 24, fogFar: 140, sunColor: 0x9aa8e0, sunIntensity: 0.85, hemiSky: 0x7a78c0, hemiGround: 0x120f28, hemiIntensity: 0.8, cloudOpacity: 0.9, cloudCount: 30, rain: true },
   };
   var WEATHER_KEYS = Object.keys(WEATHER_PRESETS);
   var weather = WEATHER_PRESETS[WEATHER_KEYS[(Math.random() * WEATHER_KEYS.length) | 0]];
@@ -1030,8 +1099,9 @@
 
   function toggleViewMode() {
     viewMode = viewMode === "fp" ? "tp" : "fp";
+    if (viewMode === "tp") setScoped(false); // 倍镜只在第一人称下有意义，切到第三人称就自动收起
     playerBody.visible = viewMode === "tp";
-    gunView.visible = viewMode === "fp";
+    gunView.visible = viewMode === "fp" && !isScoped;
     if (viewMode === "tp") { tpFollowYaw = yaw; tpCurrentDistance = TP_DISTANCE; tpInited = true; } // 切进第三人称时立刻对齐当前朝向，不要从上一次残留角度慢慢转过来
   }
 
@@ -1041,7 +1111,7 @@
   var tpRightDir = new THREE.Vector3();
   var tpSidePivot = new THREE.Vector3();
   function updateThirdPerson(dt) {
-    playerBody.position.set(camera.position.x, Math.max(0, camera.position.y - EYE_H), camera.position.z);
+    playerBody.position.set(camera.position.x, feetY, camera.position.z);
     playerBody.rotation.y = yaw;
     if (viewMode !== "tp") return;
     tpCamera.fov = camera.fov;
@@ -1089,8 +1159,16 @@
   // sRGB 输出 + 色调映射，画面对比度和色彩会明显丰富一些
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 1.25; // 夜战场景整体调暗了，曝光补一点，保证还能看清敌人
   stage.appendChild(renderer.domElement);
+
+  // 后处理：Bloom 辉光，霓虹灯光/枪口火光/警示灯这些高亮元素会自然"溢出"发光，赛博朋克夜景的质感主要靠它撑起来；
+  // threshold 调得比较高，只有真正很亮的东西（灯光、发光贴花）才会起辉光，不会让整个场景糊成一片
+  var composer = new THREE.EffectComposer(renderer);
+  var renderPass = new THREE.RenderPass(scene, camera);
+  composer.addPass(renderPass);
+  var bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.55, 0.82);
+  composer.addPass(bloomPass);
 
   var hemiLight = new THREE.HemisphereLight(weather.hemiSky, weather.hemiGround, weather.hemiIntensity);
   scene.add(hemiLight);
@@ -1228,11 +1306,11 @@
     return tex;
   }
 
-  var groundTex = makeNoiseTexture("#5c6438", 512, "#4a5029", "#707c48", 5000);
+  var groundTex = makeNoiseTexture("#23212f", 512, "#191824", "#332f42", 5000);
   groundTex.repeat.set(48, 48);
-  var metalTex = makeNoiseTexture("#5a5044", 256, "#3f382e", "#8a6a3d", 1800);
+  var metalTex = makeNoiseTexture("#363b47", 256, "#262a34", "#5a6478", 1800);
   metalTex.repeat.set(2, 2);
-  var concreteTex = makeNoiseTexture("#726b58", 256, "#5c5645", "#8f8973", 1600);
+  var concreteTex = makeNoiseTexture("#48465a", 256, "#38364a", "#5e5c74", 1600);
   concreteTex.repeat.set(3, 2);
   var rustTex = makeNoiseTexture("#6b4530", 256, "#4a2f1e", "#9c6a3a", 2000);
   rustTex.repeat.set(2, 2);
@@ -1247,7 +1325,7 @@
   ground.receiveShadow = true;
   scene.add(ground);
 
-  var grid = new THREE.GridHelper(ARENA, 44, 0x2c2f1c, 0x3a3e26);
+  var grid = new THREE.GridHelper(ARENA, 44, 0x1f8fa8, 0x2a2440);
   grid.material.opacity = 0.18;
   grid.material.transparent = true;
   scene.add(grid);
@@ -1326,13 +1404,14 @@
     roof.castShadow = true;
     group.add(roof);
 
-    // 屋顶警示灯：常年废弃工厂里还亮着的一盏红色应急灯，增加氛围
-    var beaconLight = new THREE.PointLight(0xff3b2f, 0, 14);
+    // 屋顶警示灯：常年废弃工厂里还亮着的一盏霓虹应急灯，青/品红随机，增加赛博夜色氛围
+    var beaconColor = Math.random() < 0.5 ? 0x00e5ff : 0xff2f6d;
+    var beaconLight = new THREE.PointLight(beaconColor, 0, 14);
     beaconLight.position.set(0, wallH + 0.7, 0);
     group.add(beaconLight);
     var beaconBulb = new THREE.Mesh(
       new THREE.SphereGeometry(0.13, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x330a05, emissive: 0xff3b2f, emissiveIntensity: 1 })
+      new THREE.MeshStandardMaterial({ color: 0x050510, emissive: beaconColor, emissiveIntensity: 1 })
     );
     beaconBulb.position.copy(beaconLight.position);
     group.add(beaconBulb);
@@ -1530,12 +1609,27 @@
     addObstacle(w, h, d, x, z, mat, (Math.floor(Math.random() * 4) * Math.PI) / 2);
   }
 
-  function isClear(x, z, r) {
+  // feetY 可选：如果脚部高度已经不低于某个障碍物顶面（差一点误差内），就当作"已经站在它上面"，
+  // 不再把这个障碍物当墙挡住——这样跳跃/站上掩体顶部才有意义；不传 feetY 的调用（找空位、生成道具等）
+  // 完全保持原来"只看 XZ footprint"的行为，不受影响
+  function isClear(x, z, r, feetY) {
     for (var i = 0; i < obstacles.length; i++) {
       var b = obstacles[i].box;
-      if (x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r) return false;
+      if (x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r) {
+        if (feetY !== undefined && feetY >= b.max.y - 0.12) continue;
+        return false;
+      }
     }
     return true;
+  }
+  // 某个 XZ 位置正下方能站的最高平面（掩体顶面或者地面本身），用来算跳跃落地高度/是否踩空掉落
+  function groundHeightAt(x, z) {
+    var h = 0;
+    for (var i = 0; i < obstacles.length; i++) {
+      var b = obstacles[i].box;
+      if (x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && b.max.y > h) h = b.max.y;
+    }
+    return h;
   }
 
   /* ---------------- 远景山脉（纯背景，不参与碰撞） ---------------- */
@@ -1630,7 +1724,7 @@
 
   var PLAYER_R = 0.4, MOVE_SPEED = 6.2;
 
-  function canMoveTo(x, z) { return isClear(x, z, PLAYER_R); }
+  function canMoveTo(x, z) { return isClear(x, z, PLAYER_R, feetY); }
 
   function attemptMove(dx, dz) {
     var nx = camera.position.x + dx;
@@ -1928,10 +2022,13 @@
     var bearingDeg = Math.atan2(rightComp, forwardComp) * 180 / Math.PI;
 
     var arrow = document.createElement("div");
-    arrow.className = "dmg-arrow show";
+    arrow.className = "dmg-arrow";
     arrow.style.transform = "rotate(" + bearingDeg + "deg) translateY(-90px)";
+    var glow = document.createElement("div");
+    glow.className = "dmg-arrow-glow";
+    arrow.appendChild(glow);
     dmgIndicatorsEl.appendChild(arrow);
-    setTimeout(function () { arrow.remove(); }, 950);
+    setTimeout(function () { arrow.remove(); }, 1000);
   }
 
   function damagePlayer(amount, sourcePos) {
@@ -2000,6 +2097,7 @@
     setTimeout(function () { playNoise(0.04, 0.14, 1800, "highpass"); }, 260);
   }
   function playFootstep() { playNoise(0.06, 0.16, 350, "lowpass"); }
+  function playLand() { playNoise(0.1, 0.24, 200, "lowpass"); }
   function playVictory() {
     playTone(440, 660, 0.18, "triangle", 0.22);
     setTimeout(function () { playTone(660, 880, 0.22, "triangle", 0.22); }, 160);
@@ -2027,7 +2125,7 @@
     var pos = new THREE.Vector3();
     muzzleTip.getWorldPosition(pos); // 火光要在真实枪口位置，而不是屏幕中心附近
 
-    var light = new THREE.PointLight(0xffdd88, 3, 6);
+    var light = new THREE.PointLight(0x5ff2ff, 3, 6);
     light.position.copy(pos);
     scene.add(light);
     effects.push({
@@ -2035,9 +2133,10 @@
       update: function (t) { light.intensity = 3 * (1 - t); },
     });
 
-    // 光源只是照亮周围，真正让开火"看得见"的是这个叠加混合的亮斑精灵
+    // 光源只是照亮周围，真正让开火"看得见"的是这个叠加混合的亮斑精灵；玩家用青色、敌人用品红，
+    // 一眼就能分清子弹是谁打的
     var mat = new THREE.SpriteMaterial({
-      map: flashTexture, color: 0xffffff, transparent: true, opacity: 1,
+      map: flashTexture, color: 0x8ff5ff, transparent: true, opacity: 1,
       depthWrite: false, blending: THREE.AdditiveBlending, rotation: Math.random() * Math.PI * 2,
     });
     var sprite = new THREE.Sprite(mat);
@@ -2057,7 +2156,7 @@
   }
   function spawnTracer(from, to, color) {
     var geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
-    var material = new THREE.LineBasicMaterial({ color: color || 0xfff2c2, transparent: true, opacity: 0.9 });
+    var material = new THREE.LineBasicMaterial({ color: color || 0x9ff4ff, transparent: true, opacity: 0.9 });
     var line = new THREE.Line(geometry, material);
     scene.add(line);
     effects.push({
@@ -2202,12 +2301,32 @@
   var ENEMY_HIT_CHANCE = 0.5;
   var enemyRay = new THREE.Raycaster();
   function spawnMuzzleFlashAt(position, color) {
-    var light = new THREE.PointLight(color || 0xffaa66, 2.4, 5);
+    var light = new THREE.PointLight(color || 0xff2f6d, 2.6, 6);
     light.position.copy(position);
     scene.add(light);
     effects.push({
-      obj: light, start: performance.now(), duration: 55,
-      update: function (t) { light.intensity = 2.4 * (1 - t); },
+      obj: light, start: performance.now(), duration: 70,
+      update: function (t) { light.intensity = 2.6 * (1 - t); },
+    });
+
+    // 敌人开火也用跟玩家一样的叠加混合亮斑精灵，不然隔着一段距离基本看不出"对方在开枪"
+    var mat = new THREE.SpriteMaterial({
+      map: flashTexture, color: color || 0xff2f6d, transparent: true, opacity: 1,
+      depthWrite: false, blending: THREE.AdditiveBlending, rotation: Math.random() * Math.PI * 2,
+    });
+    var sprite = new THREE.Sprite(mat);
+    sprite.position.copy(position);
+    sprite.scale.set(0.5, 0.5, 1);
+    scene.add(sprite);
+    effects.push({
+      obj: sprite, start: performance.now(), duration: 90,
+      update: function (t) {
+        var k = 1 - t;
+        var s = 0.5 * (0.55 + k * 0.7);
+        sprite.scale.set(s, s, 1);
+        mat.opacity = k;
+      },
+      dispose: function () { mat.dispose(); },
     });
   }
   function updateEnemyAI() {
@@ -2234,8 +2353,8 @@
       triggerFireAnim(en.animState);
       var gunWorldPos = new THREE.Vector3();
       en.gun.getWorldPosition(gunWorldPos);
-      spawnMuzzleFlashAt(gunWorldPos, 0xffaa66);
-      spawnTracer(gunWorldPos, camera.position.clone(), 0xff6b4a);
+      spawnMuzzleFlashAt(gunWorldPos, 0xff2f6d);
+      spawnTracer(gunWorldPos, camera.position.clone(), 0xff2f6d);
       playEnemyShot();
       if (Math.random() < ENEMY_HIT_CHANCE) {
         damagePlayer(rr(6, 16), en.group.position);
@@ -2468,6 +2587,7 @@
   }
   function exitGame() {
     gameActive = false;
+    setScoped(false);
     reticle.classList.remove("visible");
     hud.classList.remove("visible");
     hpBarWrapEl.classList.remove("visible");
@@ -2492,8 +2612,11 @@
   });
   document.addEventListener("mousemove", function (ev) {
     if (document.pointerLockElement !== canvas) return;
-    yaw -= (ev.movementX || 0) * 0.0022;
-    pitch -= (ev.movementY || 0) * 0.0022;
+    // 视角越窄（开镜时）同样的鼠标位移在画面里划过的角度越大，灵敏度要跟着 FOV 等比缩小，
+    // 不然一开镜镜头就变得极其敏感，很难稳住准星
+    var s = 0.0022 * (camera.fov / BASE_FOV);
+    yaw -= (ev.movementX || 0) * s;
+    pitch -= (ev.movementY || 0) * s;
     pitch = Math.max(-PITCH_LIM, Math.min(PITCH_LIM, pitch));
   });
 
@@ -2507,7 +2630,7 @@
     if (ev.button !== 0) return;
     mouseFiring = false;
   });
-  window.addEventListener("blur", function () { mouseFiring = false; touchFiring = false; });
+  window.addEventListener("blur", function () { mouseFiring = false; touchFiring = false; setScoped(false); });
 
   window.addEventListener("keydown", function (ev) {
     keys[ev.code] = true;
@@ -2553,7 +2676,8 @@
     currentAmmo = MAG_SIZE;
     isReloading = false;
     updateAmmoUI();
-    jumpOffset = 0; jumpVelocity = 0; isGrounded = true; playerJumping = false;
+    feetY = 0; jumpVelocity = 0; isGrounded = true; playerJumping = false;
+    camera.position.set(0, EYE_H, 10);
 
     for (var i = enemies.length - 1; i >= 0; i--) {
       var en = enemies[i];
@@ -2643,8 +2767,9 @@
       if (t.identifier === lookId) {
         var dx = t.clientX - lastLX, dy = t.clientY - lastLY;
         lastLX = t.clientX; lastLY = t.clientY;
-        yaw -= dx * TOUCH_SENS;
-        pitch -= dy * TOUCH_SENS;
+        var ts = TOUCH_SENS * (camera.fov / BASE_FOV); // 开镜时同样要降低灵敏度，原因同桌面端鼠标
+        yaw -= dx * ts;
+        pitch -= dy * ts;
         pitch = Math.max(-PITCH_LIM, Math.min(PITCH_LIM, pitch));
       }
     }
@@ -2696,13 +2821,40 @@
   var jumpBtn = document.getElementById("jump-btn");
   jumpBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); tryJump(); }, { passive: false });
 
+  /* ---------------- 倍镜瞄准：桌面端按住鼠标右键，移动端按住镜头按钮 ---------------- */
+  var isScoped = false;
+  var scopeOverlayEl = document.getElementById("scope-overlay");
+  function setScoped(v) {
+    if (v === isScoped) return;
+    if (v && viewMode !== "fp") return; // 只在第一人称下能开镜，第三人称没有意义
+    isScoped = v;
+    scopeOverlayEl.classList.toggle("show", isScoped);
+    reticle.classList.toggle("hidden-by-scope", isScoped);
+    gunView.visible = !isScoped && viewMode === "fp";
+    scopeBtn.classList.toggle("scoping", isScoped);
+  }
+  var scopeBtn = document.getElementById("scope-btn");
+  scopeBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); setScoped(true); }, { passive: false });
+  scopeBtn.addEventListener("touchend", function (ev) { ev.preventDefault(); setScoped(false); }, { passive: false });
+  scopeBtn.addEventListener("touchcancel", function () { setScoped(false); });
+  canvas.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+  document.addEventListener("mousedown", function (ev) {
+    if (ev.button !== 2 || isTouch || document.pointerLockElement !== canvas) return;
+    setScoped(true);
+  });
+  document.addEventListener("mouseup", function (ev) {
+    if (ev.button !== 2) return;
+    setScoped(false);
+  });
+
   /* ---------------- 移动反馈：视角起伏 + FOV（无左右摇摆，避免眩晕） ---------------- */
-  var BASE_FOV = 75, RUN_FOV = 78;
+  var BASE_FOV = 75, RUN_FOV = 78, SCOPE_FOV = 22;
   var BOB_FREQ = 7.5, BOB_AMP = 0.035, FOOTSTEP_INTERVAL = 0.36;
 
-  /* ---------------- 跳跃 ---------------- */
-  var GRAVITY = -20, JUMP_SPEED = 6.2;
-  var jumpOffset = 0, jumpVelocity = 0, isGrounded = true;
+  /* ---------------- 跳跃（脚部高度用绝对世界坐标跟踪，能跳到掩体顶部再落地站住） ---------------- */
+  var GRAVITY = -20, JUMP_SPEED = 6.6;
+  var feetY = 0, jumpVelocity = 0, isGrounded = true;
+  var landDip = 0; // 落地那一下给镜头一点短促下沉再回弹，比单纯的抛物线更有"踩到地面"的实感
   function tryJump() {
     if (!gameActive || !isGrounded) return;
     isGrounded = false;
@@ -2745,19 +2897,29 @@
       footstepTimer = 0;
     }
 
-    // 跳跃：简单的竖直方向弹道，落地后清零，起跳/在空中时不做头部 bob，脚步声也停掉
-    if (!isGrounded) {
-      jumpVelocity += GRAVITY * dt;
-      jumpOffset += jumpVelocity * dt;
-      if (jumpOffset <= 0) {
-        jumpOffset = 0;
-        jumpVelocity = 0;
-        isGrounded = true;
-        playerJumping = false;
+    // 跳跃/重力：每帧都用重力算一次下一步的脚部高度，跟当前位置正下方的地形/掩体顶面比较——
+    // 高于地形就是还在空中，落到地形上（或以下）就贴住地形高度、判定为落地。这样跳跃不但能起跳，
+    // 落地点如果是掩体顶部也会稳稳站上去，而不是固定摔回地面高度 0
+    jumpVelocity += GRAVITY * dt;
+    var nextFeetY = feetY + jumpVelocity * dt;
+    var groundY = groundHeightAt(camera.position.x, camera.position.z);
+    if (nextFeetY <= groundY) {
+      if (!isGrounded && jumpVelocity < -3) {
+        // 摔落速度越快，落地那一下沉得越明显，配合落地音效才有"踩实了"的感觉
+        landDip = Math.min(0.16, -jumpVelocity * 0.012);
+        playLand();
       }
+      nextFeetY = groundY;
+      jumpVelocity = 0;
+      isGrounded = true;
+      playerJumping = false;
+    } else {
+      isGrounded = false;
     }
+    feetY = nextFeetY;
+    landDip *= Math.exp(-dt * 14);
     // 仅上下起伏，不做左右滚转，避免整屏晃动导致眩晕
-    camera.position.y = EYE_H + jumpOffset + (isMoving && isGrounded ? Math.abs(Math.sin(bobTime)) * BOB_AMP : 0);
+    camera.position.y = feetY + EYE_H - landDip + (isMoving && isGrounded ? Math.abs(Math.sin(bobTime)) * BOB_AMP : 0);
 
     // 枪械视图模型：随移动轻微摆动 + 开火后坐力回弹
     gunRecoil *= Math.exp(-dt * 12);
@@ -2767,8 +2929,8 @@
     gunView.position.z = GUN_REST.z + gunRecoil * 0.12;
     gunView.rotation.x = gunRecoil * 0.22;
 
-    var targetFov = isMoving ? RUN_FOV : BASE_FOV;
-    var nextFov = camera.fov + (targetFov - camera.fov) * Math.min(dt * 6, 1);
+    var targetFov = isScoped ? SCOPE_FOV : (isMoving ? RUN_FOV : BASE_FOV);
+    var nextFov = camera.fov + (targetFov - camera.fov) * Math.min(dt * (isScoped ? 10 : 6), 1);
     if (Math.abs(nextFov - camera.fov) > 0.01) {
       camera.fov = nextFov;
       camera.updateProjectionMatrix();
@@ -2780,7 +2942,10 @@
   window.addEventListener("resize", function () {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    tpCamera.aspect = camera.aspect;
+    tpCamera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
   });
 
   var last = performance.now();
@@ -2798,7 +2963,8 @@
     updateSky(dt);
     updateBeacons(now);
     updateThirdPerson(dt);
-    renderer.render(scene, viewMode === "tp" ? tpCamera : camera);
+    renderPass.camera = viewMode === "tp" ? tpCamera : camera;
+    composer.render();
   }
   animate();
   } // end startGame

@@ -202,6 +202,118 @@
   }
   #hud.visible { display: flex; gap: 2px; flex-wrap: wrap; max-width: 92vw; }
 
+  /* 局内右上角商店按钮 + 面板：切武器/换皮肤，随时可开，打开时自动暂停 */
+  #shop-btn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    /* 移动端右侧大半屏是视角滑动区（#touch-layer 里的 #look-zone，z-index:30），
+       这里如果 z-index 比它低，按钮会被盖在下面摸不到——必须更高 */
+    z-index: 32;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(19, 15, 42, 0.82);
+    border: 1px solid var(--rule);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  #shop-btn svg { width: 62%; height: 62%; }
+  #shop-btn.visible { display: flex; }
+  #shop-btn:active { background: rgba(0, 229, 255, 0.2); }
+
+  #shop-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(3, 2, 12, 0.72);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  #shop-panel.show { display: flex; }
+  #shop-card {
+    width: min(560px, 100%);
+    max-height: 84vh;
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    box-shadow: 0 0 40px rgba(0, 229, 255, 0.15);
+    padding: 20px;
+  }
+  #shop-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+  }
+  #shop-title {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  #shop-close-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  #shop-close-btn:active { background: rgba(255, 47, 109, 0.2); }
+  .shop-section-label {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    margin: 14px 0 8px;
+  }
+  .shop-weapon-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #skin-swatches {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .skin-swatch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(19, 15, 42, 0.7);
+    border: 1px solid var(--rule);
+    padding: 8px 10px;
+    cursor: pointer;
+    color: var(--ink);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 12px;
+  }
+  .skin-swatch::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--swatch-color);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    flex: none;
+  }
+  .skin-swatch.selected {
+    border-color: var(--accent);
+    background: rgba(0, 229, 255, 0.12);
+    box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
+  }
+  @media (max-width: 480px) {
+    .shop-weapon-cards, #skin-swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
   .hud-chip {
     background: rgba(33, 31, 24, 0.82);
     border: 1px solid var(--rule);
@@ -763,6 +875,50 @@
   </div>
 </div>
 
+<button id="shop-btn" aria-label="装备商店">
+  <svg viewBox="0 0 48 48">
+    <path d="M10 16 L14 8 H34 L38 16" stroke="#00e5ff" stroke-width="2.6" fill="none" stroke-linejoin="round" />
+    <path d="M9 16 H39 L37 38 H11 Z" stroke="#00e5ff" stroke-width="2.6" fill="none" stroke-linejoin="round" />
+    <path d="M17 16 a7 7 0 0 0 14 0" stroke="#00e5ff" stroke-width="2.4" fill="none" stroke-linecap="round" />
+  </svg>
+</button>
+
+<div id="shop-panel">
+  <div id="shop-card">
+    <div id="shop-header">
+      <div id="shop-title">装备商店</div>
+      <button id="shop-close-btn" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div class="shop-section-label">武器</div>
+    <div class="weapon-cards shop-weapon-cards">
+      <button class="weapon-card" data-weapon="rifle" type="button">
+        <div class="wc-name">突击步枪</div>
+        <div class="wc-desc">均衡射速与伤害</div>
+      </button>
+      <button class="weapon-card" data-weapon="sniper" type="button">
+        <div class="wc-name">狙击步枪</div>
+        <div class="wc-desc">超远射程高威力，射速慢</div>
+      </button>
+      <button class="weapon-card" data-weapon="smg" type="button">
+        <div class="wc-name">冲锋枪</div>
+        <div class="wc-desc">射速快弹匣大，近距离强</div>
+      </button>
+      <button class="weapon-card" data-weapon="pistol" type="button">
+        <div class="wc-name">手枪</div>
+        <div class="wc-desc">换弹快，威力射程一般</div>
+      </button>
+    </div>
+    <div class="shop-section-label">人物皮肤</div>
+    <div id="skin-swatches">
+      <button class="skin-swatch" data-skin="urban" style="--swatch-color:#3d5266" type="button"><span>都市蓝</span></button>
+      <button class="skin-swatch" data-skin="desert" style="--swatch-color:#8a6a45" type="button"><span>荒漠棕</span></button>
+      <button class="skin-swatch" data-skin="arctic" style="--swatch-color:#c9cdd6" type="button"><span>极地白</span></button>
+      <button class="skin-swatch" data-skin="stealth" style="--swatch-color:#1c1e24" type="button"><span>暗夜黑</span></button>
+      <button class="skin-swatch" data-skin="cyber" style="--swatch-color:#b8263f" type="button"><span>赛博红</span></button>
+    </div>
+  </div>
+</div>
+
 <div id="hp-bar-wrap">
   <div id="hp-bar-label">生命</div>
   <div id="hp-bar-track">
@@ -991,7 +1147,9 @@
   var startBtnEl = document.getElementById("start-btn");
   if (startBtnEl) startBtnEl.textContent = "进入阵地";
 
-  var weaponCards = document.querySelectorAll(".weapon-card");
+  // 只框定开始界面里的卡片：局内商店面板里也有一份同样 class 的卡片（用来局内随时换枪），
+  // 查询范围不加限定的话点商店里的卡片会连带把开始界面那份的 selected 状态也清掉
+  var weaponCards = document.querySelectorAll("#weapon-select .weapon-card");
   for (var __wc = 0; __wc < weaponCards.length; __wc++) {
     (function (card) {
       card.addEventListener("click", function () {
@@ -1141,6 +1299,7 @@
   // 第三人称自己的枪口标记点：之前第三人称下弹道/枪口火光一直用第一人称那把（隐藏的）枪的枪口算，
   // 跟屏幕上实际看到的过肩人物位置完全对不上，子弹会像是从屏幕正中间凭空飞出来
   var tpMuzzleTip = new THREE.Object3D();
+  var playerSkinMaterial = null; // 局内商店切换人物皮肤时改这个材质的颜色
   var playerMixer = null;
   var playerAnimState = null;
   var playerMoving = false;
@@ -1159,6 +1318,7 @@
       if (surfaceMesh) {
         surfaceMesh.material = surfaceMesh.material.clone();
         surfaceMesh.material.color.set(0x3d5266); // 蓝灰色军服，跟敌人的红棕色区分
+        playerSkinMaterial = surfaceMesh.material;
       }
       playerBody.add(charRoot);
 
@@ -1184,6 +1344,7 @@
       }
     } else {
       var uniformMat = new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.75 });
+      playerSkinMaterial = uniformMat;
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xb98a63, roughness: 0.8 });
       var idMat = new THREE.MeshStandardMaterial({ color: 0x3b7fc4, roughness: 0.5, emissive: 0x0a2a4a, emissiveIntensity: 0.35 });
       var gunMat2 = new THREE.MeshStandardMaterial({ color: 0x2a281f, roughness: 0.6 });
@@ -2701,6 +2862,23 @@
     loadGunModel(w);
   }
 
+  // 人物皮肤：没有单独的换装贴图/模型，做法是直接改第三人称军服材质的颜色——
+  // 低成本但够用，商店里先只放几种纯色方案
+  var SKINS = {
+    urban: { key: "urban", name: "都市蓝", color: 0x3d5266 },
+    desert: { key: "desert", name: "荒漠棕", color: 0x8a6a45 },
+    arctic: { key: "arctic", name: "极地白", color: 0xc9cdd6 },
+    stealth: { key: "stealth", name: "暗夜黑", color: 0x1c1e24 },
+    cyber: { key: "cyber", name: "赛博红", color: 0xb8263f },
+  };
+  var currentSkin = SKINS.urban;
+  function applySkin(key) {
+    var s = SKINS[key];
+    if (!s || !playerSkinMaterial) return;
+    currentSkin = s;
+    playerSkinMaterial.color.set(s.color);
+  }
+
   function shoot() {
     if (!gameActive || isReloading) return;
     var now = performance.now();
@@ -3012,6 +3190,9 @@
   var finalScoreEl = document.getElementById("final-score");
   var finalScoreSub = document.getElementById("final-score-sub");
   var restartBtn = document.getElementById("restart-btn");
+  var shopBtn = document.getElementById("shop-btn");
+  var shopPanel = document.getElementById("shop-panel");
+  var shopCloseBtn = document.getElementById("shop-close-btn");
 
   var gameActive = false;
   var yaw = 0, pitch = 0;
@@ -3041,6 +3222,7 @@
     reticle.classList.add("visible");
     hud.classList.add("visible");
     hpBarWrapEl.classList.add("visible");
+    shopBtn.classList.add("visible");
     if (isTouch) touchLayer.classList.remove("hidden");
   }
   function exitGame() {
@@ -3049,8 +3231,70 @@
     reticle.classList.remove("visible");
     hud.classList.remove("visible");
     hpBarWrapEl.classList.remove("visible");
+    shopBtn.classList.remove("visible");
     touchLayer.classList.add("hidden");
+    if (shopOpen) { shopOpen = false; shopPanel.classList.remove("show"); }
     if (endScreen.classList.contains("hidden")) overlay.classList.remove("hidden");
+  }
+
+  /* ---------------- 局内商店：右上角随时可开，切武器/换皮肤，打开时暂停游戏 ---------------- */
+  var shopOpen = false;
+  function refreshShopSelection() {
+    var cards = shopPanel.querySelectorAll(".weapon-card");
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.toggle("selected", cards[i].getAttribute("data-weapon") === currentWeapon.key);
+    }
+    var swatches = shopPanel.querySelectorAll(".skin-swatch");
+    for (var j = 0; j < swatches.length; j++) {
+      swatches[j].classList.toggle("selected", swatches[j].getAttribute("data-skin") === currentSkin.key);
+    }
+  }
+  function openShop() {
+    if (shopOpen || !gameActive) return;
+    shopOpen = true;
+    gameActive = false; // 移动/射击/敌人 AI 都已经在各自的 update 函数里判断 gameActive，直接借用来暂停
+    mouseFiring = false;
+    touchFiring = false;
+    touchFiringLeft = false;
+    touchFiringRight = false;
+    refreshShopSelection();
+    shopPanel.classList.add("show");
+    if (!isTouch && document.pointerLockElement === canvas) document.exitPointerLock();
+  }
+  function closeShop() {
+    if (!shopOpen) return;
+    shopOpen = false;
+    shopPanel.classList.remove("show");
+    gameActive = true;
+    if (!isTouch) canvas.requestPointerLock();
+  }
+  shopBtn.addEventListener("click", openShop);
+  shopBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); openShop(); }, { passive: false });
+  shopCloseBtn.addEventListener("click", closeShop);
+  shopCloseBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); closeShop(); }, { passive: false });
+  var shopWeaponCards = shopPanel.querySelectorAll(".weapon-card");
+  for (var __swc = 0; __swc < shopWeaponCards.length; __swc++) {
+    (function (card) {
+      function pick(ev) {
+        if (ev) ev.preventDefault();
+        applyWeapon(card.getAttribute("data-weapon"));
+        refreshShopSelection();
+      }
+      card.addEventListener("click", pick);
+      card.addEventListener("touchstart", pick, { passive: false });
+    })(shopWeaponCards[__swc]);
+  }
+  var skinSwatchEls = shopPanel.querySelectorAll(".skin-swatch");
+  for (var __sk = 0; __sk < skinSwatchEls.length; __sk++) {
+    (function (el) {
+      function pick(ev) {
+        if (ev) ev.preventDefault();
+        applySkin(el.getAttribute("data-skin"));
+        refreshShopSelection();
+      }
+      el.addEventListener("click", pick);
+      el.addEventListener("touchstart", pick, { passive: false });
+    })(skinSwatchEls[__sk]);
   }
 
   startBtn.addEventListener("click", function () {
@@ -3065,8 +3309,11 @@
     canvas.requestPointerLock();
   });
   document.addEventListener("pointerlockchange", function () {
-    if (document.pointerLockElement === canvas) enterGame();
-    else exitGame();
+    // 打开局内商店时会主动 exitPointerLock 以便鼠标能点面板按钮，这个由 openShop 触发的
+    // "解锁"不该被当成玩家按 ESC 退出游戏处理，不然商店面板前脚弹出后脚就被 exitGame 关掉；
+    // 关闭商店时同理，重新拿锁不需要再跑一遍 enterGame 的敌人计时重置逻辑
+    if (document.pointerLockElement === canvas) { if (!shopOpen) enterGame(); }
+    else { if (!shopOpen) exitGame(); }
   });
   document.addEventListener("mousemove", function (ev) {
     if (document.pointerLockElement !== canvas) return;

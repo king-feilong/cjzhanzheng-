@@ -1593,9 +1593,13 @@
 
   // 旋转角度只取 0/90/180/270 度：非轴对齐旋转会让轴对齐碰撞盒（AABB）比视觉模型大一圈，
   // 摸起来就像"空气墙"，所以大型建筑一律取直角朝向
-  buildFactory(-70, -55, 0, 30, 20);
-  buildFactory(65, -60, Math.PI / 2, 26, 18);
-  buildFactory(-10, 65, Math.PI, 34, 22);
+  //
+  // 整张地图按象限划成四个有明确主题的区域，出生点（0,10）在正中间的十字路口：
+  // 西北＝锈蚀工厂区，东北＝农场，西南＝CS 风格白房子居民区，东南＝被占领的军事哨站。
+  // 两座工厂放在西北，第三座挪到东南当"据点指挥部"
+  buildFactory(-75, -68, 0, 28, 20);
+  buildFactory(-28, -85, Math.PI / 2, 22, 16);
+  buildFactory(60, 75, 0, 30, 20);
 
   /* ---------------- CS 经典地图风格的白房子群：平房 + 二层楼，跟锈蚀工厂拉开材质/体量差异 ---------------- */
   var plasterTex = makeNoiseTexture("#d8d2c4", 256, "#c7c0ae", "#eae4d6", 1400);
@@ -1689,11 +1693,13 @@
     return group;
   }
 
-  buildHouse(20, -30, 0, 12, 10);
-  buildHouse(-45, 20, Math.PI / 2, 11, 9);
-  buildHouse(50, 40, 0, 13, 10);
-  buildTwoStory(-25, -75, Math.PI / 2, 16, 13);
-  buildTwoStory(85, 10, Math.PI, 15, 12);
+  // 西南居民区：三栋平房 + 一栋二层楼围出一小片街区
+  buildHouse(-75, 50, 0, 12, 10);
+  buildHouse(-45, 68, Math.PI / 2, 11, 9);
+  buildHouse(-82, 88, 0, 13, 10);
+  buildTwoStory(-20, 50, Math.PI / 2, 15, 12);
+  // 东南据点再放一栋二层楼当营房
+  buildTwoStory(85, 42, Math.PI, 15, 12);
 
   /* ---------------- 储罐 / 集装箱等工业细节 ---------------- */
   function addTank(x, z, r, h) {
@@ -1707,21 +1713,21 @@
     scene.add(mesh);
     obstacles.push({ mesh: mesh, box: new THREE.Box3().setFromObject(mesh) });
   }
-  addTank(-45, -40, 2.6, 6.5);
-  addTank(-40, -44, 1.8, 5);
-  addTank(90, -30, 2.2, 7);
-  addTank(20, 50, 2.4, 6);
+  // 西北工厂区的储油罐，东北农场一座当粮仓，东南据点一座当补给罐
+  addTank(-95, -40, 2.4, 6.5);
+  addTank(-88, -35, 1.8, 5);
+  addTank(90, -90, 2.2, 5.5);
+  addTank(30, 90, 2.2, 6);
 
   function addContainer(x, z, rotY, texVariant) {
     var mat = new THREE.MeshStandardMaterial({ map: texVariant, roughness: 0.75, metalness: 0.15 });
     addObstacle(8, 2.9, 2.3, x, z, mat, rotY);
   }
-  addContainer(30, -35, 0, containerTexA);
-  addContainer(38, -32, Math.PI / 2, containerTexB);
-  addContainer(-30, 30, Math.PI / 2, containerTexA);
-  addContainer(50, 40, 0, containerTexB);
-  addContainer(-90, 20, Math.PI / 2, containerTexA);
-  addContainer(90, 60, 0, containerTexB);
+  addContainer(-45, -45, 0, containerTexA);
+  addContainer(-55, -95, Math.PI / 2, containerTexB);
+  addContainer(60, -30, 0, containerTexA);
+  addContainer(-30, 90, 0, containerTexB);
+  addContainer(40, 30, Math.PI / 2, containerTexA);
 
   /* ---------------- 废弃坦克：纯地图装饰，碰撞盒用一个跟模型贴合的隐形箱体，
      不用等真正的坦克模型异步加载完才能生效，也不用让子弹/AI 视线去对一整个高面数载具网格做射线检测 ---------------- */
@@ -1746,8 +1752,9 @@
       scene.add(model);
     });
   }
-  addWarTank(60, 20, 0, "tank.glb");
-  addWarTank(-60, 40, Math.PI / 2, "tank2.glb");
+  // 军用载具属于东南据点的核心装饰，放两辆在营房/指挥部周围
+  addWarTank(50, 95, 0, "tank.glb");
+  addWarTank(85, 15, Math.PI / 2, "tank2.glb");
 
   /* ---------------- 谷仓/鸡舍：跟白房子/工厂拉开风格差异的又一类地图建筑，同样只做外围实心碰撞 ---------------- */
   function addFarmBuilding(x, z, rotY, url, rawW, rawD, rawH) {
@@ -1769,9 +1776,10 @@
       scene.add(model);
     });
   }
-  addFarmBuilding(-95, -20, 0, "barn.glb", 7.7, 8.2, 6);
-  addFarmBuilding(75, -85, Math.PI / 2, "bigbarn.glb", 7.7, 8.2, 7.9);
-  addFarmBuilding(-15, -10, 0, "chickencoop.glb", 2.4, 2.2, 1.85);
+  // 三座农场建筑集中放在东北象限，凑成独立的"农场区"
+  addFarmBuilding(45, -78, 0, "barn.glb", 7.7, 8.2, 6);
+  addFarmBuilding(85, -50, Math.PI / 2, "bigbarn.glb", 7.7, 8.2, 7.9);
+  addFarmBuilding(30, -35, 0, "chickencoop.glb", 2.4, 2.2, 1.85);
 
   /* ---------------- 更多掩体类型：油桶 / 沙袋堆 / 板条箱堆 / 混凝土路障 ---------------- */
   var woodTex = makeStripeTexture("#6b4a2c", "#3f2e1c", 128);
@@ -1849,26 +1857,27 @@
     addObstacle(2.3, 0.85, 0.55, x, z, barrierMat, rotY);
   }
 
-  addBarrelCluster(-55, 10, 3);
-  addBarrelCluster(75, 15, 4);
-  addBarrelCluster(-20, -70, 3);
-  addBarrelCluster(10, -20, 2);
-  addBarrelCluster(-75, 70, 3);
+  // 每个区域各摊一点小型掩体，保证近距离交火不会太空旷；正中间十字路口单独留一小圈，
+  // 出生点附近保持相对开阔，方便一进场看清四个方向
+  addBarrelCluster(-70, -30, 3);
+  addBarrelCluster(65, -20, 3);
+  addBarrelCluster(-90, 30, 3);
+  addBarrelCluster(90, 45, 4);
 
-  addSandbagStack(-15, 20, 0, 2.4);
-  addSandbagStack(40, -10, Math.PI / 2, 3.2);
-  addSandbagStack(-55, -20, Math.PI / 2, 2.4);
-  addSandbagStack(15, 80, 0, 2.8);
+  addSandbagStack(-15, 75, 0, 2.6);
+  addSandbagStack(45, 95, Math.PI / 2, 3.2);
+  addSandbagStack(20, 20, 0, 2.4);
+  addSandbagStack(-20, -20, Math.PI / 2, 2.4);
 
-  addCratePile(-35, 15, 0.4);
-  addCratePile(60, 5, -0.6);
-  addCratePile(-60, 50, 1.0);
-  addCratePile(25, -55, 0.2);
+  addCratePile(-15, -50, 0.3);
+  addCratePile(20, -60, -0.3);
+  addCratePile(-55, 25, 0.5);
+  addCratePile(70, 25, -0.6);
 
   addConcreteBarrier(0, -25, 0);
   addConcreteBarrier(5, -25, 0);
-  addConcreteBarrier(-25, 45, Math.PI / 2);
-  addConcreteBarrier(70, 30, Math.PI / 2);
+  addConcreteBarrier(-20, 30, Math.PI / 2);
+  addConcreteBarrier(25, -15, Math.PI / 2);
 
   /* ---------------- 空气中的浮尘粒子，增加废弃工业区的氛围 ---------------- */
   var dustGeometry = new THREE.BufferGeometry();

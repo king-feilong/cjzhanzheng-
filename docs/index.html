@@ -607,25 +607,25 @@
   }
   #view-btn:active { background: rgba(224, 135, 47, 0.4); }
 
-  /* 跳跃按钮 */
+  /* 跳跃按钮：向上的箭头 + 底部一道弧线暗示起跳弹起，常见射击游戏的跳跃图标画法 */
   #jump-btn {
     position: absolute;
     right: 144px;
     bottom: 92px;
     width: 66px;
     height: 66px;
+    padding: 0;
     border-radius: 50%;
     background: rgba(33, 31, 24, 0.7);
     border: 2px solid var(--ink-dim);
-    color: var(--ink);
-    font-size: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: auto;
     z-index: 31;
   }
-  #jump-btn:active { background: rgba(224, 135, 47, 0.4); }
+  #jump-btn svg { width: 58%; height: 58%; overflow: visible; }
+  #jump-btn:active { background: rgba(224, 135, 47, 0.4); border-color: #ffb347; }
 </style>
 
 <div id="stage"></div>
@@ -731,7 +731,12 @@
   </button>
   <button id="fire-btn">🔥</button>
   <button id="view-btn" aria-label="切换视角">👁</button>
-  <button id="jump-btn" aria-label="跳跃">⤒</button>
+  <button id="jump-btn" aria-label="跳跃">
+    <svg viewBox="0 0 48 48">
+      <path d="M 24 7 L 36 19.5 L 28 19.5 L 28 30 L 20 30 L 20 19.5 L 12 19.5 Z" fill="#f2cf7f" />
+      <path d="M 11 37 Q 24 44 37 37" stroke="#e0b95c" stroke-width="3.2" fill="none" stroke-linecap="round" />
+    </svg>
+  </button>
 </div>
 
 <script>
@@ -756,7 +761,7 @@
     });
   }
 
-  // 额外的动作片段（俯卧转身 / 跳跃 / 死亡）只提取了动画关键帧数据，不含网格，
+  // 额外的动作片段（待机/走路/跑步/射击/装弹/俯卧转身/跳跃/死亡）只提取了动画关键帧数据，不含网格，
   // 体积比整份 glb 小得多；用 THREE.AnimationClip.toJSON/parse 序列化，跟主角色共用同一套骨骼命名
   function parseExtraClips(clipsJson) {
     var clips = {};
@@ -791,21 +796,39 @@
     }
     return clip;
   }
-  // 跑动 / 俯卧转身 / 跳跃 / 死亡，四条动作片段共用同一套骨骼命名，可以被所有角色实例（敌人 + 玩家）的
-  // AnimationMixer 共同引用，不需要每个实例各自复制一份关键帧数据
+  // 待机 / 走路 / 跑步 / 射击 / 装弹 / 俯卧转身 / 跳跃 / 死亡，全部共用同一套骨骼命名，
+  // 可以被所有角色实例（敌人 + 玩家）的 AnimationMixer 共同引用，不需要每个实例各自复制一份关键帧数据；
+  // crouchRun 是最早接入的蹲姿跑动作，现在保留着备用，主状态机改用更通用的 idle/walk/run 一套
   var CLIPS = null;
   if (CHAR) {
+    var extra = CHAR.extraClips || {};
     CLIPS = {
-      run: CHAR.animations && CHAR.animations[0] ? stripHorizontalRootMotion(CHAR.animations[0]) : null,
-      prone_turn: CHAR.extraClips ? CHAR.extraClips.prone_turn : null,
-      jump: CHAR.extraClips ? CHAR.extraClips.jump : null,
-      dying: CHAR.extraClips ? CHAR.extraClips.dying : null,
+      crouchRun: CHAR.animations && CHAR.animations[0] ? stripHorizontalRootMotion(CHAR.animations[0]) : null,
+      idle: extra.idle || null,
+      walk: stripHorizontalRootMotion(extra.walk || null),
+      run: stripHorizontalRootMotion(extra.run || null),
+      fire: extra.fire || null,
+      reload: extra.reload || null,
+      prone_turn: extra.prone_turn || null,
+      jump: extra.jump || null,
+      dying: extra.dying || null,
     };
   }
   function findBoneExact(root, name) {
     var found = null;
     root.traverse(function (o) { if (!found && o.isBone && o.name === name) found = o; });
     return found;
+  }
+  // 手骨骼绑定姿势本身朝向是任意的（取决于骨架），直接把枪挂上去、不修正旋转的话枪口指向完全无法预期，
+  // 看起来就像贴脸上一个来路不明的方块。这里在挂载的那一刻（角色还没开始播动作、姿势就是骨架的绑定姿势）
+  // 量出手骨骼当时的世界朝向，反推出一个局部旋转，让枪的长边（局部 +Z）之后始终对齐角色的正前方、
+  // 保持水平——因为是挂在骨骼下面的局部变换，动作播放时手怎么摆，枪就跟着自然摆，不会跳来跳去
+  var __gunForwardQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
+  var __handWorldQuat = new THREE.Quaternion();
+  function orientGunToHand(handBone, gun) {
+    handBone.updateMatrixWorld(true);
+    handBone.getWorldQuaternion(__handWorldQuat);
+    gun.quaternion.copy(__handWorldQuat).invert().multiply(__gunForwardQuat);
   }
   // 给一个骨骼动画角色实例创建可切换的动作状态机（run / prone_turn / jump / dying）
   function buildActionState(mixer) {
@@ -841,8 +864,18 @@
   var ARENA = 220, HALF = ARENA / 2;
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x828d92);
-  scene.fog = new THREE.Fog(0x7c8478, 50, 240);
+
+  // 随机天气：影响天空颜色、雾效、光照强度，云层浓淡，下雨时额外加一层雨滴粒子
+  var WEATHER_PRESETS = {
+    clear: { skyTop: 0x3f7ac0, skyBottom: 0xd9ecf4, fogColor: 0xb9cdd6, fogNear: 70, fogFar: 260, sunColor: 0xffe6c2, sunIntensity: 1.15, hemiSky: 0xcfe0e8, hemiGround: 0x3a3628, hemiIntensity: 0.85, cloudOpacity: 0.5, cloudCount: 14, rain: false },
+    overcast: { skyTop: 0x848d92, skyBottom: 0xc7cdd0, fogColor: 0x9099a0, fogNear: 45, fogFar: 200, sunColor: 0xd7dbe0, sunIntensity: 0.55, hemiSky: 0xaab0b4, hemiGround: 0x322f28, hemiIntensity: 0.65, cloudOpacity: 0.85, cloudCount: 26, rain: false },
+    haze: { skyTop: 0x8f9482, skyBottom: 0xd8d0ac, fogColor: 0xb7ac86, fogNear: 32, fogFar: 165, sunColor: 0xffd9a0, sunIntensity: 0.8, hemiSky: 0xcdc7a0, hemiGround: 0x362c1e, hemiIntensity: 0.7, cloudOpacity: 0.4, cloudCount: 10, rain: false },
+    rain: { skyTop: 0x4c545c, skyBottom: 0x828c92, fogColor: 0x717a80, fogNear: 26, fogFar: 145, sunColor: 0xaab2b8, sunIntensity: 0.45, hemiSky: 0x8c959a, hemiGround: 0x26241f, hemiIntensity: 0.55, cloudOpacity: 0.9, cloudCount: 30, rain: true },
+  };
+  var WEATHER_KEYS = Object.keys(WEATHER_PRESETS);
+  var weather = WEATHER_PRESETS[WEATHER_KEYS[(Math.random() * WEATHER_KEYS.length) | 0]];
+
+  scene.fog = new THREE.Fog(weather.fogColor, weather.fogNear, weather.fogFar);
 
   var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   var EYE_H = 1.7;
@@ -920,6 +953,7 @@
   var playerMixer = null;
   var playerAnimState = null;
   var playerMoving = false;
+  var playerSpeedTier = "walk"; // 触屏摇杆轻推走路、推满或键盘按键跑步
   var playerJumping = false;
   (function buildPlayerBody() {
     if (CHAR) {
@@ -937,6 +971,15 @@
       }
       playerBody.add(charRoot);
 
+      if (CLIPS.crouchRun) {
+        playerMixer = new THREE.AnimationMixer(charRoot);
+        playerAnimState = buildActionState(playerMixer);
+        playAction(playerAnimState, playerAnimState.actions.idle ? "idle" : "crouchRun");
+        playerMixer.update(0);
+      }
+
+      // 手枪要挂在骨骼摆出真实持枪姿势之后再量朝向：绑定姿势（T-pose）跟端枪的手部朝向完全不一样，
+      // 挂太早算出来的旋转会离谱地偏
       var handBone = findBoneExact(charRoot, "mixamorigRightHand");
       if (handBone) {
         var gunMat = new THREE.MeshStandardMaterial({ color: 0x2a281f, roughness: 0.6 });
@@ -944,14 +987,7 @@
         gun.position.set(0, 0.02, 0.22);
         gun.castShadow = true;
         handBone.add(gun);
-      }
-
-      if (CLIPS.run) {
-        playerMixer = new THREE.AnimationMixer(charRoot);
-        playerAnimState = buildActionState(playerMixer);
-        playAction(playerAnimState, "run");
-        playerAnimState.actions.run.paused = true; // 默认静止定格，不要一上来就自己跑
-        playerMixer.update(0);
+        orientGunToHand(handBone, gun);
       }
     } else {
       var uniformMat = new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.75 });
@@ -987,7 +1023,7 @@
   // 这样不用改动任何现有的瞄准/AI/碰撞代码
   var tpCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   var viewMode = "fp"; // "fp" 第一人称 | "tp" 第三人称
-  var TP_DISTANCE = 3.4, TP_HEIGHT = 1.55;
+  var TP_DISTANCE = 3.4, TP_HEIGHT = 1.55, TP_SIDE_OFFSET = 0.55;
   var tpFollowYaw = 0; // 跟随视角的轨道角度，带一点跟随延迟，避免快速甩视角时镜头突然大幅度甩到人物另一侧
   var tpCurrentDistance = TP_DISTANCE;
   var tpInited = false;
@@ -1002,6 +1038,8 @@
   var tpCameraRay = new THREE.Raycaster();
   var tpPivot = new THREE.Vector3();
   var tpBackDir = new THREE.Vector3();
+  var tpRightDir = new THREE.Vector3();
+  var tpSidePivot = new THREE.Vector3();
   function updateThirdPerson(dt) {
     playerBody.position.set(camera.position.x, Math.max(0, camera.position.y - EYE_H), camera.position.z);
     playerBody.rotation.y = yaw;
@@ -1018,11 +1056,14 @@
 
     tpPivot.set(camera.position.x, camera.position.y - EYE_H + TP_HEIGHT, camera.position.z);
     tpBackDir.set(Math.sin(tpFollowYaw), 0, Math.cos(tpFollowYaw));
+    tpRightDir.set(Math.cos(tpFollowYaw), 0, -Math.sin(tpFollowYaw));
+    // 过肩偏移：镜头往右挪一点，人物就站到画面左侧，不会正好卡在准星正中间挡住瞄准点
+    tpSidePivot.copy(tpPivot).addScaledVector(tpRightDir, TP_SIDE_OFFSET);
 
     // 相机避障：如果身后 TP_DISTANCE 距离内有墙/掩体，就把相机拉近到碰撞点前面，
     // 不然贴着掩体切第三人称时镜头会直接穿到墙里、卡住看不清
     var targetDistance = TP_DISTANCE;
-    tpCameraRay.set(tpPivot, tpBackDir);
+    tpCameraRay.set(tpSidePivot, tpBackDir);
     tpCameraRay.far = TP_DISTANCE;
     var obstacleMeshes = obstacles.map(function (o) { return o.mesh; });
     var blocks = tpCameraRay.intersectObjects(obstacleMeshes, false);
@@ -1036,7 +1077,7 @@
     }
     tpInited = true;
 
-    tpCamera.position.copy(tpPivot).addScaledVector(tpBackDir, tpCurrentDistance);
+    tpCamera.position.copy(tpSidePivot).addScaledVector(tpBackDir, tpCurrentDistance);
     tpCamera.rotation.set(pitch, yaw, 0, "YXZ");
   }
 
@@ -1051,8 +1092,9 @@
   renderer.toneMappingExposure = 1.08;
   stage.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0xcbd0c6, 0x3a3628, 0.85));
-  var sun = new THREE.DirectionalLight(0xffe6c2, 1.1);
+  var hemiLight = new THREE.HemisphereLight(weather.hemiSky, weather.hemiGround, weather.hemiIntensity);
+  scene.add(hemiLight);
+  var sun = new THREE.DirectionalLight(weather.sunColor, weather.sunIntensity);
   sun.position.set(60, 90, 40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -1063,6 +1105,79 @@
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 220;
   scene.add(sun);
+
+  /* ---------------- 天空穹顶（渐变）+ 云层 + 下雨粒子 ---------------- */
+  var clouds = [];
+  var rainPoints = null;
+  (function buildSky() {
+    var skyGeo = new THREE.SphereGeometry(420, 20, 14);
+    var skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new THREE.Color(weather.skyTop) },
+        bottomColor: { value: new THREE.Color(weather.skyBottom) },
+      },
+      vertexShader: "varying vec3 vWorldPos; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vWorldPos; void main() { float h = clamp(normalize(vWorldPos).y * 1.6 + 0.15, 0.0, 1.0); gl_FragColor = vec4(mix(bottomColor, topColor, pow(h, 0.55)), 1.0); }",
+      side: THREE.BackSide,
+      fog: false,
+      depthWrite: false,
+    });
+    scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // 云：柔化圆斑贴图的一批扁平广告牌，飘在天上，会缓慢横向漂移
+    var cloudCanvas = document.createElement("canvas");
+    cloudCanvas.width = cloudCanvas.height = 128;
+    var cctx = cloudCanvas.getContext("2d");
+    var cg = cctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    cg.addColorStop(0, "rgba(255,255,255,0.95)");
+    cg.addColorStop(0.5, "rgba(255,255,255,0.55)");
+    cg.addColorStop(1, "rgba(255,255,255,0)");
+    cctx.fillStyle = cg;
+    cctx.fillRect(0, 0, 128, 128);
+    var cloudTex = new THREE.CanvasTexture(cloudCanvas);
+    var cloudMat = new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: weather.cloudOpacity, depthWrite: false, fog: true });
+    clouds = [];
+    for (var c = 0; c < weather.cloudCount; c++) {
+      var mat = cloudMat.clone();
+      mat.opacity = weather.cloudOpacity * rr(0.6, 1);
+      var sprite = new THREE.Sprite(mat);
+      var cAng = rr(0, Math.PI * 2), cR = rr(30, HALF + 120);
+      sprite.position.set(Math.sin(cAng) * cR, rr(55, 95), Math.cos(cAng) * cR);
+      var s = rr(40, 90);
+      sprite.scale.set(s, s * rr(0.45, 0.65), 1);
+      scene.add(sprite);
+      clouds.push({ sprite: sprite, speed: rr(0.4, 1.1) });
+    }
+
+    if (weather.rain) {
+      var RAIN_COUNT = 900;
+      var rainGeo = new THREE.BufferGeometry();
+      var rainPos = new Float32Array(RAIN_COUNT * 3);
+      for (var r2 = 0; r2 < RAIN_COUNT; r2++) {
+        rainPos[r2 * 3] = rr(-HALF, HALF);
+        rainPos[r2 * 3 + 1] = rr(0, 45);
+        rainPos[r2 * 3 + 2] = rr(-HALF, HALF);
+      }
+      rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+      var rainMat = new THREE.PointsMaterial({ color: 0xaebfc9, size: 0.14, transparent: true, opacity: 0.5, depthWrite: false });
+      rainPoints = new THREE.Points(rainGeo, rainMat);
+      scene.add(rainPoints);
+    }
+  })();
+  function updateSky(dt) {
+    for (var i = 0; i < clouds.length; i++) {
+      clouds[i].sprite.position.x += dt * clouds[i].speed;
+      if (clouds[i].sprite.position.x > HALF + 160) clouds[i].sprite.position.x = -HALF - 160;
+    }
+    if (rainPoints) {
+      var pos = rainPoints.geometry.attributes.position.array;
+      for (var j = 1; j < pos.length; j += 3) {
+        pos[j] -= dt * 34;
+        if (pos[j] < 0) pos[j] = 45;
+      }
+      rainPoints.geometry.attributes.position.needsUpdate = true;
+    }
+  }
 
   /* ---------------- 程序化贴图（无需外部图片资源） ---------------- */
   function makeNoiseTexture(base, size, c1, c2, count) {
@@ -1159,12 +1274,14 @@
 
   function rr(min, max) { return min + Math.random() * (max - min); }
 
+  // 地图边界用看不见的空气墙：只挡人挡子弹，不在视觉上把整张地图箱死，
+  // 这样远处的山才能被看到，地图观感上是开阔地形而不是一个封闭箱子
   var WALL_T = 2, WALL_H = 7;
-  var wallMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.9 });
-  addObstacle(ARENA + WALL_T * 2, WALL_H, WALL_T, 0, -HALF, wallMat);
-  addObstacle(ARENA + WALL_T * 2, WALL_H, WALL_T, 0, HALF, wallMat);
-  addObstacle(WALL_T, WALL_H, ARENA, -HALF, 0, wallMat);
-  addObstacle(WALL_T, WALL_H, ARENA, HALF, 0, wallMat);
+  var airWallMat = new THREE.MeshBasicMaterial({ visible: false });
+  addObstacle(ARENA + WALL_T * 2, WALL_H, WALL_T, 0, -HALF, airWallMat);
+  addObstacle(ARENA + WALL_T * 2, WALL_H, WALL_T, 0, HALF, airWallMat);
+  addObstacle(WALL_T, WALL_H, ARENA, -HALF, 0, airWallMat);
+  addObstacle(WALL_T, WALL_H, ARENA, HALF, 0, airWallMat);
 
   /* ---------------- 废弃工厂 ---------------- */
   function buildFactory(cx, cz, rotY, w, d) {
@@ -1421,6 +1538,96 @@
     return true;
   }
 
+  /* ---------------- 远景山脉（纯背景，不参与碰撞） ---------------- */
+  (function buildMountains() {
+    var mountainMat = new THREE.MeshStandardMaterial({ color: 0x6d7566, roughness: 1, flatShading: true, fog: true });
+    var count = 30;
+    var ringR = HALF + 60;
+    for (var i = 0; i < count; i++) {
+      var ang = (i / count) * Math.PI * 2 + rr(-0.12, 0.12);
+      var r = ringR + rr(-18, 30);
+      var mh = rr(34, 78);
+      var mw = rr(38, 70);
+      var mesh = new THREE.Mesh(new THREE.ConeGeometry(mw, mh, 5 + ((Math.random() * 3) | 0)), mountainMat);
+      mesh.position.set(Math.sin(ang) * r, mh / 2 - 6, Math.cos(ang) * r);
+      mesh.rotation.y = rr(0, Math.PI * 2);
+      mesh.scale.x = rr(0.75, 1.35);
+      scene.add(mesh);
+    }
+  })();
+
+  /* ---------------- 树木（树干参与碰撞）+ 灌木（纯装饰） ---------------- */
+  var treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 0.9 });
+  function addTree(x, z) {
+    var group = new THREE.Group();
+    var trunkH = rr(2.2, 3.6);
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, trunkH, 6), treeTrunkMat);
+    trunk.position.y = trunkH / 2;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    group.add(trunk);
+    var leafColor = new THREE.Color(0x3f5a2c);
+    leafColor.offsetHSL(rr(-0.02, 0.02), rr(-0.1, 0.1), rr(-0.08, 0.08));
+    var leafMat = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.95, flatShading: true });
+    var tiers = 2 + (Math.random() < 0.5 ? 1 : 0);
+    var ty = trunkH * 0.55;
+    for (var t = 0; t < tiers; t++) {
+      var tw = rr(1.1, 1.7) * (1 - t * 0.2);
+      var th = rr(1.5, 2.1);
+      var cone = new THREE.Mesh(new THREE.ConeGeometry(tw, th, 7), leafMat);
+      cone.position.y = ty + th * 0.42;
+      cone.castShadow = true;
+      cone.receiveShadow = true;
+      group.add(cone);
+      ty += th * 0.62;
+    }
+    group.position.set(x, 0, z);
+    group.rotation.y = rr(0, Math.PI * 2);
+    scene.add(group);
+    // 只用树干做碰撞（细长圆柱），枝叶部分不挡视线/子弹，免得变成又一种"空气墙"
+    var box = new THREE.Box3(
+      new THREE.Vector3(x - 0.45, 0, z - 0.45),
+      new THREE.Vector3(x + 0.45, trunkH, z + 0.45)
+    );
+    obstacles.push({ mesh: trunk, box: box });
+  }
+  function addBush(x, z) {
+    var color = new THREE.Color(0x455c2e);
+    color.offsetHSL(rr(-0.03, 0.03), rr(-0.1, 0.1), rr(-0.1, 0.1));
+    var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 1, flatShading: true });
+    var group = new THREE.Group();
+    var blobs = 3 + (Math.random() < 0.5 ? 1 : 0);
+    for (var i = 0; i < blobs; i++) {
+      var s = rr(0.32, 0.58);
+      var blob = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat);
+      blob.position.set(rr(-0.3, 0.3), s * 0.7, rr(-0.3, 0.3));
+      blob.castShadow = true;
+      blob.receiveShadow = true;
+      group.add(blob);
+    }
+    group.position.set(x, 0, z);
+    scene.add(group);
+  }
+  var TREE_COUNT = 32, BUSH_COUNT = 28;
+  for (var ti = 0; ti < TREE_COUNT; ti++) {
+    var tx, tz, tTries = 0;
+    do {
+      tx = rr(-HALF + 8, HALF - 8);
+      tz = rr(-HALF + 8, HALF - 8);
+      tTries++;
+    } while ((!isClear(tx, tz, 1.6) || Math.hypot(tx, tz - 10) < SAFE_R) && tTries < 20);
+    if (tTries < 20) addTree(tx, tz);
+  }
+  for (var bi = 0; bi < BUSH_COUNT; bi++) {
+    var bx, bz, bTries = 0;
+    do {
+      bx = rr(-HALF + 6, HALF - 6);
+      bz = rr(-HALF + 6, HALF - 6);
+      bTries++;
+    } while ((!isClear(bx, bz, 0.8) || Math.hypot(bx, bz - 10) < SAFE_R) && bTries < 20);
+    if (bTries < 20) addBush(bx, bz);
+  }
+
   var PLAYER_R = 0.4, MOVE_SPEED = 6.2;
 
   function canMoveTo(x, z) { return isClear(x, z, PLAYER_R); }
@@ -1483,6 +1690,15 @@
       }
       group.add(charRoot);
 
+      if (CLIPS.crouchRun) {
+        mixer = new THREE.AnimationMixer(charRoot);
+        animState = buildActionState(mixer);
+        playAction(animState, animState.actions.idle ? "idle" : "crouchRun");
+        mixer.update(0); // 先摆出一个正常持枪姿势，挂枪量朝向要用这个姿势而不是骨架的绑定 T-pose
+      }
+
+      // 手枪要挂在骨骼摆出真实持枪姿势之后再量朝向：绑定姿势（T-pose）跟端枪的手部朝向完全不一样，
+      // 挂太早算出来的旋转会离谱地偏
       var handBone = findBoneExact(charRoot, "mixamorigRightHand");
       if (handBone) {
         var gunMat = new THREE.MeshStandardMaterial({ color: 0x2a281f, roughness: 0.6 });
@@ -1490,13 +1706,11 @@
         gun.position.set(0, 0.02, 0.22);
         gun.castShadow = true;
         handBone.add(gun);
+        orientGunToHand(handBone, gun);
       }
 
-      if (CLIPS.run) {
-        mixer = new THREE.AnimationMixer(charRoot);
-        animState = buildActionState(mixer);
-        playAction(animState, "run");
-        mixer.update(rr(0, 0.7)); // 随机起始相位，避免所有敌人动作完全同步
+      if (mixer) {
+        mixer.update(rr(0, 2)); // 随机起始相位，避免所有敌人动作完全同步
         animState.nextProneAt = performance.now() + rr(3000, 9000);
       }
 
@@ -1933,6 +2147,7 @@
     isReloading = true;
     updateAmmoUI();
     playReload();
+    triggerReloadAnim(playerAnimState);
     setTimeout(function () {
       currentAmmo = MAG_SIZE;
       isReloading = false;
@@ -1957,6 +2172,7 @@
     playShot();
     spawnMuzzleFlash();
     flashReticle();
+    triggerFireAnim(playerAnimState);
 
     raycaster.setFromCamera(center, camera);
     var targets = obstacles.map(function (o) { return o.mesh; }).concat(allEnemyPartMeshes());
@@ -2013,8 +2229,9 @@
       var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
       if (blocks.length && blocks[0].distance < dist - 0.5) continue; // 视线被掩体挡住
 
-      // 开火动作：手臂快速前摆 + 枪口闪光 + 弹道
+      // 开火动作：骨骼动画播一次射击抖动 + 枪口闪光 + 弹道
       en.attackAnimStart = now;
+      triggerFireAnim(en.animState);
       var gunWorldPos = new THREE.Vector3();
       en.gun.getWorldPosition(gunWorldPos);
       spawnMuzzleFlashAt(gunWorldPos, 0xffaa66);
@@ -2114,34 +2331,41 @@
 
   /* ---------------- 骨骼动画播放 + 命中判定盒跟随骨骼位置 ---------------- */
   var __hitboxWorldPos = new THREE.Vector3();
+  // fire / reload / jump / prone_turn 都是"播一次就完事"的动作，正在播的时候不要被下面的走跑待机逻辑打断
+  function isOneShotActive(st) {
+    var name = st.current;
+    if (name !== "fire" && name !== "reload" && name !== "jump" && name !== "prone_turn") return false;
+    var act = st.actions[name];
+    if (!act) return false;
+    return act.isRunning() && act.time < act.getClip().duration - 0.03;
+  }
+  function triggerFireAnim(st) {
+    if (!st || !st.actions.fire) return;
+    playAction(st, "fire", { once: true, fade: 0.05 });
+  }
+  function triggerReloadAnim(st) {
+    if (!st || !st.actions.reload) return;
+    playAction(st, "reload", { once: true, fade: 0.1 });
+    var dur = st.actions.reload.getClip().duration;
+    st.actions.reload.setEffectiveTimeScale(dur / (RELOAD_MS / 1000)); // 把装弹动作时长对齐到实际装弹耗时
+  }
+
   function updateEnemyAnimState(en, now) {
     var st = en.animState;
     if (!st) return;
+    if (isOneShotActive(st)) return;
     var moving = !!en.moveTarget;
 
-    if (st.current === "prone_turn") {
-      var act = st.actions.prone_turn;
-      var finished = !act.isRunning() || act.time >= act.getClip().duration - 0.03;
-      // 如果动作还没播完但敌人已经要开始移动了（比如巡逻/警戒重新取到了目标点），立刻切回跑步，
-      // 不要傻等一段俯卧转身播完——那样会出现"边播趴地动作边被拖着滑走"的诡异效果
-      if (finished || moving) {
-        playAction(st, "run");
-        st.actions.run.paused = !moving;
-        st.nextProneAt = now + rr(5000, 11000);
-      }
-      return;
-    }
-
     if (moving) {
-      playAction(st, "run");
-      st.actions.run.paused = false;
+      var moveName = en.aggro && st.actions.run ? "run" : (st.actions.walk ? "walk" : (st.actions.run ? "run" : "crouchRun"));
+      playAction(st, moveName);
+      if (st.actions[moveName]) st.actions[moveName].paused = false;
       st.nextProneAt = now + rr(5000, 11000);
       return;
     }
 
-    // 静止：定格站姿，偶尔穿插一次俯卧转身动作增加变化，不会一直保持原地跑步的诡异观感
-    playAction(st, "run");
-    st.actions.run.paused = true;
+    // 静止：播放待机动作，偶尔穿插一次俯卧转身增加变化
+    playAction(st, st.actions.idle ? "idle" : "crouchRun");
     if (st.nextProneAt === undefined) st.nextProneAt = now + rr(3000, 8000);
     if (now > st.nextProneAt && st.actions.prone_turn) {
       playAction(st, "prone_turn", { once: true, fade: 0.15 });
@@ -2155,8 +2379,11 @@
       if (st.current !== "jump") playAction(st, "jump", { once: true, fade: 0.1 });
       return;
     }
-    playAction(st, "run");
-    st.actions.run.paused = !playerMoving;
+    if (isOneShotActive(st)) return;
+    var desired = !playerMoving ? "idle" : playerSpeedTier;
+    if (!st.actions[desired]) desired = st.actions.idle ? "idle" : (st.actions.run ? "run" : "crouchRun");
+    playAction(st, desired);
+    if (desired === "walk" || desired === "run") st.actions[desired].paused = false;
   }
 
   // 每帧只对每个敌人的骨架做一次 updateMatrixWorld，再直接读取骨骼矩阵算判定盒世界坐标，
@@ -2507,6 +2734,7 @@
 
     var isMoving = len > 0.05;
     playerMoving = isMoving;
+    playerSpeedTier = len > 0.6 ? "run" : "walk";
     if (isMoving) {
       bobTime += dt * BOB_FREQ * Math.max(len, 0.4);
       if (isGrounded) {
@@ -2567,6 +2795,7 @@
     updateCharacterAnimations(dt);
     updateEffects();
     updateDust(dt);
+    updateSky(dt);
     updateBeacons(now);
     updateThirdPerson(dt);
     renderer.render(scene, viewMode === "tp" ? tpCamera : camera);

@@ -2152,7 +2152,7 @@
     group.add(light);
     group.position.set(x, 0.15, z);
     scene.add(group);
-    healthPacks.push({ group: group, x: x, z: z, active: true, bobPhase: rr(0, Math.PI * 2) });
+    healthPacks.push({ group: group, light: light, meshes: [caseMesh, barH, barV], x: x, z: z, active: true, bobPhase: rr(0, Math.PI * 2) });
   }
   function findPickupSpot() {
     for (var a = 0; a < 40; a++) {
@@ -2180,7 +2180,11 @@
         playerHP = Math.min(PLAYER_MAX_HP, playerHP + HEALTH_PACK_HEAL);
         updateHpUI();
         pack.active = false;
-        pack.group.visible = false;
+        // 只隐藏网格 + 熄灭光照强度，不要隐藏整个 group（含 PointLight）——
+        // 场景实时点光源数量一变，Three.js 会给所有受光照材质重新编译着色器，
+        // 拾取瞬间就是这个"卡顿一下"的元凶
+        for (var mi = 0; mi < pack.meshes.length; mi++) pack.meshes[mi].visible = false;
+        pack.light.intensity = 0;
         playPickup();
       }
     }
@@ -3001,11 +3005,13 @@
       if (dist > ENEMY_RANGE) continue;
       toPlayer.normalize();
 
-      // 视野盲区：玩家得在敌人朝向前方大致 140° 的锥形范围内才可能被发现/攻击，
-      // 不然背对着玩家、或者玩家绕到侧后方，敌人还是照样能精确开枪，非常不讲道理
+      // 视野盲区：玩家得在敌人朝向前方大致 120° 的锥形范围内才可能被发现/攻击，
+      // 不然背对着玩家、或者玩家绕到侧后方，敌人还是照样能精确开枪，非常不讲道理；
+      // 之前是 140°、且这个判断在敌人转身/移动逻辑跑之前执行，读到的朝向是上一帧的，
+      // 玩家眼里就是"明明没朝我"却还能中弹——现在收紧角度，且转身逻辑已经挪到这前面先跑一遍
       var facingX = -Math.sin(en.group.rotation.y), facingZ = -Math.cos(en.group.rotation.y);
       var facingDot = facingX * toPlayer.x + facingZ * toPlayer.z;
-      if (facingDot < 0.34) continue;
+      if (facingDot < 0.5) continue;
 
       enemyRay.set(eyePos, toPlayer);
       var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
@@ -3014,6 +3020,7 @@
       // 开火动作：骨骼动画播一次射击抖动 + 枪口闪光 + 弹道
       en.attackAnimStart = now;
       triggerFireAnim(en.animState);
+      en.group.updateMatrixWorld(true); // 强制刷新，枪口世界坐标不用上一帧残留的矩阵
       var gunWorldPos = new THREE.Vector3();
       en.gun.getWorldPosition(gunWorldPos);
       spawnMuzzleFlashAt(gunWorldPos, 0xff2f6d);
@@ -3536,23 +3543,45 @@
   var touchFiringRight = false, touchFiringLeft = false;
   function syncTouchFiring() { touchFiring = touchFiringRight || touchFiringLeft; }
   function wireFireButton(btn, setFlag) {
+    // 触屏事件的 touchmove/touchend 只会送到 touchstart 发生的那个元素上，不会
+    // 跟着手指挪到 look-zone 上——所以按住开火键的同一根手指拖动时视角纹丝不动。
+    // 这里直接在开火键自身上也监听拖动，按住开火键时同一手指滑动照样转视角。
+    var btnTouchId = null, lastBX = 0, lastBY = 0;
     btn.addEventListener("touchstart", function (ev) {
       ev.preventDefault();
       setFlag(true);
       syncTouchFiring();
       btn.classList.add("firing");
       shoot();
+      var t = ev.changedTouches[0];
+      btnTouchId = t.identifier; lastBX = t.clientX; lastBY = t.clientY;
+    }, { passive: false });
+    btn.addEventListener("touchmove", function (ev) {
+      for (var i = 0; i < ev.changedTouches.length; i++) {
+        var t = ev.changedTouches[i];
+        if (t.identifier === btnTouchId) {
+          var dx = t.clientX - lastBX, dy = t.clientY - lastBY;
+          lastBX = t.clientX; lastBY = t.clientY;
+          var ts = TOUCH_SENS * Math.max(camera.fov / BASE_FOV, 0.45);
+          yaw -= dx * ts;
+          pitch -= dy * ts;
+          pitch = Math.max(-PITCH_LIM, Math.min(PITCH_LIM, pitch));
+        }
+      }
+      ev.preventDefault();
     }, { passive: false });
     btn.addEventListener("touchend", function (ev) {
       ev.preventDefault();
       setFlag(false);
       syncTouchFiring();
       btn.classList.remove("firing");
+      btnTouchId = null;
     }, { passive: false });
     btn.addEventListener("touchcancel", function () {
       setFlag(false);
       syncTouchFiring();
       btn.classList.remove("firing");
+      btnTouchId = null;
     });
   }
   var fireBtn = document.getElementById("fire-btn");
@@ -3727,8 +3756,10 @@
     var dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     updateMovement(dt);
-    updateEnemyAI();
+    // 敌人的朝向/移动要先算完，AI 判断视野盲区和读取枪口位置时用的才是这一帧最新的朝向和骨骼姿态，
+    // 不然读到的是上一帧的旧数据——玩家会看到"明明没转过来的敌人却精准命中"、"子弹不是从枪口飞出"
     updateEnemyMovement(dt);
+    updateEnemyAI();
     updateCharacterAnimations(dt);
     updateEffects();
     updateDust(dt);

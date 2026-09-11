@@ -303,6 +303,30 @@
     text-transform: uppercase;
     margin: 14px 0 8px;
   }
+  #shop-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .shop-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--ink-dim);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 8px 0 10px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .shop-tab.selected {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
   .shop-weapon-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #skin-swatches, #hero-skin-swatches {
     display: grid;
@@ -329,6 +353,13 @@
     background: var(--swatch-color);
     border: 1px solid rgba(255, 255, 255, 0.3);
     flex: none;
+  }
+  /* 英雄皮肤用角色实际渲染出来的小头像，而不是一个纯色圆点——圆点看不出"这是谁" */
+  .skin-swatch.hero-swatch::before {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: #0c0a1e var(--swatch-color) center 18%/cover no-repeat;
   }
   .skin-swatch.selected {
     border-color: var(--accent);
@@ -985,46 +1016,53 @@
       <div id="shop-title">装备商店</div>
       <button id="shop-close-btn" type="button" aria-label="关闭">✕</button>
     </div>
-    <div class="shop-section-label">武器</div>
-    <div class="weapon-cards shop-weapon-cards">
-      <button class="weapon-card" data-weapon="rifle" type="button">
-        <div class="wc-icon"></div>
-        <div class="wc-name">突击步枪</div>
-        <div class="wc-desc">均衡射速与伤害</div>
-      </button>
-      <button class="weapon-card" data-weapon="sniper" type="button">
-        <div class="wc-icon"></div>
-        <div class="wc-name">狙击步枪</div>
-        <div class="wc-desc">超远射程高威力，射速慢</div>
-      </button>
-      <button class="weapon-card" data-weapon="smg" type="button">
-        <div class="wc-icon"></div>
-        <div class="wc-name">冲锋枪</div>
-        <div class="wc-desc">射速快弹匣大，近距离强</div>
-      </button>
-      <button class="weapon-card" data-weapon="pistol" type="button">
-        <div class="wc-icon"></div>
-        <div class="wc-name">手枪</div>
-        <div class="wc-desc">换弹快，威力射程一般</div>
-      </button>
+    <div id="shop-tabs">
+      <button class="shop-tab selected" data-shop-tab="weapon" type="button">武器</button>
+      <button class="shop-tab" data-shop-tab="skin" type="button">皮肤</button>
     </div>
-    <div class="shop-section-label">人物皮肤</div>
-    <div id="skin-swatches">
-      <button class="skin-swatch" data-skin="original" style="--swatch-color:conic-gradient(#3d5266,#8a6a45,#c9cdd6,#1c1e24,#b8263f)" type="button"><span>原厂本色</span></button>
-      <button class="skin-swatch" data-skin="urban" style="--swatch-color:#3d5266" type="button"><span>都市蓝</span></button>
-      <button class="skin-swatch" data-skin="desert" style="--swatch-color:#8a6a45" type="button"><span>荒漠棕</span></button>
-      <button class="skin-swatch" data-skin="arctic" style="--swatch-color:#c9cdd6" type="button"><span>极地白</span></button>
-      <button class="skin-swatch" data-skin="stealth" style="--swatch-color:#1c1e24" type="button"><span>暗夜黑</span></button>
-      <button class="skin-swatch" data-skin="cyber" style="--swatch-color:#b8263f" type="button"><span>赛博红</span></button>
+    <div class="shop-page" data-shop-page="weapon">
+      <div class="weapon-cards shop-weapon-cards">
+        <button class="weapon-card" data-weapon="rifle" type="button">
+          <div class="wc-icon"></div>
+          <div class="wc-name">突击步枪</div>
+          <div class="wc-desc">均衡射速与伤害</div>
+        </button>
+        <button class="weapon-card" data-weapon="sniper" type="button">
+          <div class="wc-icon"></div>
+          <div class="wc-name">狙击步枪</div>
+          <div class="wc-desc">超远射程高威力，射速慢</div>
+        </button>
+        <button class="weapon-card" data-weapon="smg" type="button">
+          <div class="wc-icon"></div>
+          <div class="wc-name">冲锋枪</div>
+          <div class="wc-desc">射速快弹匣大，近距离强</div>
+        </button>
+        <button class="weapon-card" data-weapon="pistol" type="button">
+          <div class="wc-icon"></div>
+          <div class="wc-name">手枪</div>
+          <div class="wc-desc">换弹快，威力射程一般</div>
+        </button>
+      </div>
     </div>
-    <div class="shop-section-label">英雄皮肤</div>
-    <div id="hero-skin-swatches">
-      <button class="skin-swatch" data-skin="ironman" style="--swatch-color:conic-gradient(#b8321f,#d4a017,#b8321f)" type="button"><span>钢铁侠</span></button>
-      <button class="skin-swatch" data-skin="ironman_mk7" style="--swatch-color:conic-gradient(#8c1a1a,#d4a017,#8c1a1a)" type="button"><span>钢铁侠 Mk7</span></button>
-      <button class="skin-swatch" data-skin="ironman_mk1" style="--swatch-color:conic-gradient(#7a2a1a,#c98a3a,#7a2a1a)" type="button"><span>钢铁侠玩具版</span></button>
-      <button class="skin-swatch" data-skin="spiderman" style="--swatch-color:conic-gradient(#8b1e2b,#1c3f8b,#8b1e2b)" type="button"><span>蜘蛛侠</span></button>
-      <button class="skin-swatch" data-skin="blackpanther" style="--swatch-color:#0b0b0f" type="button"><span>黑豹</span></button>
-      <button class="skin-swatch" data-skin="hulk" style="--swatch-color:conic-gradient(#3c6e3c,#2a3d6b,#3c6e3c)" type="button"><span>绿巨人</span></button>
+    <div class="shop-page" data-shop-page="skin" hidden>
+      <div class="shop-section-label">人物皮肤</div>
+      <div id="skin-swatches">
+        <button class="skin-swatch" data-skin="original" style="--swatch-color:conic-gradient(#3d5266,#8a6a45,#c9cdd6,#1c1e24,#b8263f)" type="button"><span>原厂本色</span></button>
+        <button class="skin-swatch" data-skin="urban" style="--swatch-color:#3d5266" type="button"><span>都市蓝</span></button>
+        <button class="skin-swatch" data-skin="desert" style="--swatch-color:#8a6a45" type="button"><span>荒漠棕</span></button>
+        <button class="skin-swatch" data-skin="arctic" style="--swatch-color:#c9cdd6" type="button"><span>极地白</span></button>
+        <button class="skin-swatch" data-skin="stealth" style="--swatch-color:#1c1e24" type="button"><span>暗夜黑</span></button>
+        <button class="skin-swatch" data-skin="cyber" style="--swatch-color:#b8263f" type="button"><span>赛博红</span></button>
+      </div>
+      <div class="shop-section-label">英雄皮肤</div>
+      <div id="hero-skin-swatches">
+        <button class="skin-swatch hero-swatch" data-skin="ironman" style="--swatch-color:url('thumb_ironman.webp')" type="button"><span>钢铁侠</span></button>
+        <button class="skin-swatch hero-swatch" data-skin="ironman_mk7" style="--swatch-color:url('thumb_ironman_mk7.webp')" type="button"><span>钢铁侠 Mk7</span></button>
+        <button class="skin-swatch hero-swatch" data-skin="ironman_mk1" style="--swatch-color:url('thumb_ironman_mk1.webp')" type="button"><span>钢铁侠玩具版</span></button>
+        <button class="skin-swatch hero-swatch" data-skin="spiderman" style="--swatch-color:url('thumb_spiderman.webp')" type="button"><span>蜘蛛侠</span></button>
+        <button class="skin-swatch hero-swatch" data-skin="blackpanther" style="--swatch-color:url('thumb_blackpanther.webp')" type="button"><span>黑豹</span></button>
+        <button class="skin-swatch hero-swatch" data-skin="hulk" style="--swatch-color:url('thumb_hulk.webp')" type="button"><span>绿巨人</span></button>
+      </div>
     </div>
   </div>
 </div>
@@ -2245,7 +2283,9 @@
       var model = gltf.scene;
       model.rotation.y = rotY;
       model.position.set(x, 0, z);
-      model.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      // 只接收阴影、不投射阴影：这栋建筑几万顶点，真机上测出来投影是能感觉到的一块开销，
+      // 而它在地图边缘、多数时候玩家离得远，少这层投影阴影基本看不出来
+      model.traverse(function (o) { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
       scene.add(model);
     });
   }
@@ -2807,6 +2847,18 @@
   var tombstoneSlabGeo = new THREE.BoxGeometry(0.5, 0.62, 0.12);
   var tombstoneBaseGeo = new THREE.BoxGeometry(0.62, 0.1, 0.22);
   var tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6a64, roughness: 0.95 });
+  // 材质对应的着色器程序是"第一次真正被绘制时"才由驱动编译的，墓碑材质在第一个敌人死亡前
+  // 从没上过屏，第一次生成墓碑那一下就会撞上这次编译，表现为死亡瞬间卡一下——
+  // 这里用一个不加入场景、只用来强制编译的临时网格提前把编译这一步做掉，
+  // 真正生成墓碑时用的是同一个材质对象，直接复用已编译好的程序
+  (function warmUpTombstoneShader() {
+    // 用真正的 scene（带上实际的灯光配置）来编译，不然编译出来的着色器变体（灯光数量不同）
+    // 跟正式渲染时需要的对不上，等于没预热；compile 本身不会真的画到屏幕上，加完就能立刻移除
+    var warm = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
+    scene.add(warm);
+    renderer.compile(scene, camera);
+    scene.remove(warm);
+  })();
   function spawnTombstone(x, z) {
     var group = new THREE.Group();
     var slab = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
@@ -3311,18 +3363,70 @@
   // 做法是套上皮肤时整个换成这个模型（隐藏原来的 Mixamo 身体和第三人称手上那把枪），
   // 靠一个简单的上下起伏/左右摇摆来模拟"在动"，而不是真正的骨骼行走动画——
   // scale/offset 是逐个模型用像素级测量量出来的（这些素材本身的导出比例、轴心五花八门）
+  // limbs：这几个模型虽然都不是 Mixamo 骨骼、动作状态机接不上，但骨骼本身还在、命名也大多可读，
+  // 所以没有直接放弃真动作、退化成纯粹的整体起伏——而是逐个模型把大腿/小腿/大臂/小臂这几根骨骼
+  // 的准确名字挖出来（三种命名习惯：黑豹是"leg left thigh_051"这种单词拼接、绿巨人和蜘蛛侠是
+  // UE 习惯的"thigh_l_XXX"、钢铁侠 Mk7 是"LeftUpLeg_XX_XX"），运行时直接摆这几根骨骼的旋转角度
+  // 做一个简易摆腿摆臂循环。crossfit_ready 那两款钢铁侠皮肤本身就是没有骨骼的静态网格，
+  // 没有骨骼可摆，只能维持原来的整体起伏
   var HERO_SKINS = {
-    blackpanther: { name: "黑豹", file: "skin_blackpanther.glb", scale: 0.007942, offset: [0, 0, 0], rotY: Math.PI },
-    hulk: { name: "绿巨人", file: "skin_hulk.glb", scale: 0.7855, offset: [0, 0, 0], rotY: Math.PI },
+    blackpanther: {
+      name: "黑豹", file: "skin_blackpanther.glb", scale: 0.007942, offset: [0, 0, 0], rotY: Math.PI,
+      limbs: {
+        // 注意：源文件里骨骼名带空格（"leg left thigh_051"），但 THREE.GLTFLoader 加载时会把
+        // 空格替换成下划线，这里用的是加载进浏览器之后的实际名字，不是源文件里的原始名字
+        upperLegL: "leg_left_thigh_051", lowerLegL: "leg_left_knee_052",
+        upperLegR: "leg_right_thigh_055", lowerLegR: "leg_right_knee_056",
+        upperArmL: "arm_left_shoulder_2_09", lowerArmL: "arm_left_elbow_010",
+        upperArmR: "arm_right_shoulder_2_031", lowerArmR: "arm_right_elbow_032",
+      },
+    },
+    hulk: {
+      name: "绿巨人", file: "skin_hulk.glb", scale: 0.7855, offset: [0, 0, 0], rotY: Math.PI,
+      limbs: {
+        upperLegL: "thigh_l_0566", lowerLegL: "calf_l_0567",
+        upperLegR: "thigh_r_0600", lowerLegR: "calf_r_0601",
+        upperArmL: "upperarm_l_024", lowerArmL: "lowerarm_l_025",
+        upperArmR: "upperarm_r_096", lowerArmR: "lowerarm_r_097",
+      },
+    },
     ironman: { name: "钢铁侠", file: "skin_ironman.glb", scale: 0.9192, offset: [0, 0, 0], rotY: Math.PI },
-    ironman_mk7: { name: "钢铁侠 Mk7", file: "skin_ironman_mk7.glb", scale: 97.07, offset: [0, 0, 0], rotY: Math.PI },
+    ironman_mk7: {
+      name: "钢铁侠 Mk7", file: "skin_ironman_mk7.glb", scale: 97.07, offset: [0, 0, 0], rotY: Math.PI,
+      limbs: {
+        upperLegL: "LeftUpLeg_06_11", lowerLegL: "LeftLeg_07_12",
+        upperLegR: "RightUpLeg_012_17", lowerLegR: "RightLeg_013_18",
+        upperArmL: "LeftArm_026_31", lowerArmL: "LeftForeArm_029_33",
+        upperArmR: "RightArm_067_74", lowerArmR: "RightForeArm_070_76",
+      },
+    },
     ironman_mk1: { name: "钢铁侠玩具版", file: "skin_ironman_mk1.glb", scale: 1.740, offset: [0.036, 0.011, 0.096], rotY: Math.PI },
-    spiderman: { name: "蜘蛛侠", file: "skin_spiderman.glb", scale: 1.307, offset: [0, 0, 0], rotY: Math.PI },
+    spiderman: {
+      name: "蜘蛛侠", file: "skin_spiderman.glb", scale: 1.307, offset: [0, 0, 0], rotY: Math.PI,
+      limbs: {
+        upperLegL: "thigh_l_07", lowerLegL: "calf_l_08",
+        upperLegR: "thigh_r_020", lowerLegR: "calf_r_021",
+        upperArmL: "upperarm_l_056", lowerArmL: "lowerarm_l_057",
+        upperArmR: "upperarm_r_0141", lowerArmR: "lowerarm_r_0150",
+      },
+    },
   };
   var heroModelCache = {};
+  var heroBoneCache = {}; // key -> { upperLegL: THREE.Bone, ... } 或 null（没有骨骼可摆）
   var activeHeroKey = null;
   var activeHeroModel = null;
   var heroBobPhase = 0;
+
+  function resolveHeroBones(key, root) {
+    var limbs = HERO_SKINS[key].limbs;
+    if (!limbs) { heroBoneCache[key] = null; return; }
+    var bones = {};
+    for (var part in limbs) bones[part] = findBoneExact(root, limbs[part]);
+    // 记下每根骨骼刚加载时（绑定姿势）的旋转，摆动都是在这个基础上叠加偏移量，
+    // 而不是直接赋值覆盖——不然会丢掉骨架本身的绑定姿势朝向，摆出来的角度完全不对
+    for (var p2 in bones) { if (bones[p2]) bones[p2].userData._bindQuat = bones[p2].quaternion.clone(); }
+    heroBoneCache[key] = bones;
+  }
 
   function loadHeroSkin(key, cb) {
     if (heroModelCache[key]) { cb(heroModelCache[key]); return; }
@@ -3333,6 +3437,7 @@
       var root = gltf.scene;
       root.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       heroModelCache[key] = root;
+      resolveHeroBones(key, root);
       cb(root);
     }, undefined, function (err) { console.warn("皮肤模型加载失败：" + cfg.file, err); });
   }
@@ -3844,15 +3949,46 @@
     }
   }
 
-  // 漫威皮肤模型没有骨骼动作，用一个简单的起伏+摇摆模拟"在走/在跑"，跟真正的骨骼动画状态机是两回事
+  var __heroLimbAxis = new THREE.Vector3(1, 0, 0);
+  var __heroLimbQuat = new THREE.Quaternion();
+  // 摆某一根骨骼：在它绑定姿势的基础上叠加一个绕局部 X 轴的旋转，而不是直接赋值——
+  // 直接赋值会把骨架本身的绑定姿势朝向也覆盖掉，摆出来的角度会完全不对
+  function swingBone(bone, angle) {
+    if (!bone) return;
+    __heroLimbQuat.setFromAxisAngle(__heroLimbAxis, angle);
+    bone.quaternion.copy(bone.userData._bindQuat).multiply(__heroLimbQuat);
+  }
+  // 漫威皮肤模型没有一个是 Mixamo 骨骼，也没带内置动作，接不上现有的动作状态机；
+  // 但骨骼本身还在，能摆的就直接摆大腿/小腿/大臂/小臂做一个简易走路循环，
+  // 摆不了骨骼的（没有骨架的静态网格）才退化成整体起伏+摇摆
   function updateHeroSkinBob(dt) {
     if (!activeHeroModel) return;
     var cfg = HERO_SKINS[activeHeroKey];
-    var speed = !playerMoving ? 2 : (playerSpeedTier === "run" ? 9 : 6);
+    var bones = heroBoneCache[activeHeroKey];
+    var speed = !playerMoving ? 1.2 : (playerSpeedTier === "run" ? 9 : 6);
     heroBobPhase += dt * speed;
-    var amp = !playerMoving ? 0.012 : 0.045;
-    activeHeroModel.position.y = cfg.offset[1] + Math.sin(heroBobPhase) * amp;
-    activeHeroModel.rotation.z = playerMoving ? Math.sin(heroBobPhase * 0.5) * 0.05 : 0;
+    if (bones) {
+      var legAmp = !playerMoving ? 0 : (playerSpeedTier === "run" ? 0.62 : 0.4);
+      var armAmp = legAmp * 0.7;
+      var s = Math.sin(heroBobPhase), sOpp = Math.sin(heroBobPhase + Math.PI);
+      // 同侧手脚是反相摆的（人走路时左腿向前摆的同时是右臂向前摆），膝盖只在腿摆到后方时略微弯曲
+      swingBone(bones.upperLegL, s * legAmp);
+      swingBone(bones.upperLegR, sOpp * legAmp);
+      swingBone(bones.lowerLegL, Math.max(0, -s) * legAmp * 0.9);
+      swingBone(bones.lowerLegR, Math.max(0, -sOpp) * legAmp * 0.9);
+      swingBone(bones.upperArmL, sOpp * armAmp);
+      swingBone(bones.upperArmR, s * armAmp);
+      swingBone(bones.lowerArmL, legAmp * 0.15);
+      swingBone(bones.lowerArmR, legAmp * 0.15);
+      // 走/跑之外仍然叠一点点整体上下起伏，站定不动时完全归零，不然摆完腿人物还是会飘一下
+      var bob = playerMoving ? Math.abs(s) * 0.03 : 0;
+      activeHeroModel.position.y = cfg.offset[1] + bob;
+      activeHeroModel.rotation.z = 0;
+    } else {
+      var amp = !playerMoving ? 0.012 : 0.045;
+      activeHeroModel.position.y = cfg.offset[1] + Math.sin(heroBobPhase) * amp;
+      activeHeroModel.rotation.z = playerMoving ? Math.sin(heroBobPhase * 0.5) * 0.05 : 0;
+    }
   }
 
   function updateCharacterAnimations(dt) {
@@ -4006,6 +4142,28 @@
       el.addEventListener("click", pick);
       el.addEventListener("touchstart", pick, { passive: false });
     })(skinSwatchEls[__sk]);
+  }
+  // 商店面板分"武器"/"皮肤"两个标签页：武器和皮肤各自条目一多，堆在同一屏里要一直往下滚才能
+  // 看全，切标签页比长列表滚动更清楚
+  var shopTabEls = shopPanel.querySelectorAll(".shop-tab");
+  var shopPageEls = shopPanel.querySelectorAll(".shop-page");
+  function switchShopTab(name) {
+    for (var i = 0; i < shopTabEls.length; i++) {
+      shopTabEls[i].classList.toggle("selected", shopTabEls[i].getAttribute("data-shop-tab") === name);
+    }
+    for (var j = 0; j < shopPageEls.length; j++) {
+      shopPageEls[j].hidden = shopPageEls[j].getAttribute("data-shop-page") !== name;
+    }
+  }
+  for (var __st = 0; __st < shopTabEls.length; __st++) {
+    (function (tabEl) {
+      function pick(ev) {
+        if (ev) ev.preventDefault();
+        switchShopTab(tabEl.getAttribute("data-shop-tab"));
+      }
+      tabEl.addEventListener("click", pick);
+      tabEl.addEventListener("touchstart", pick, { passive: false });
+    })(shopTabEls[__st]);
   }
 
   // 开局/重开倒计时：3-2-1 数完再真正把 gameActive 打开，数数期间战场已经露出来了但

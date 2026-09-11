@@ -2263,10 +2263,11 @@
     });
   }
   addLandmarkBuilding(90, -85, 0, "map_building.glb", 12.89, 13.9, 8.7); // 沿街商铺：东南角新地标，带完整实心碰撞
-  addDecorModel("map_road.glb", 45, 20, 0.2, 0.007); // 公路桥：连接蓝方大本营和红方据点方向的装饰路段
   addDecorModel("map_terrain.glb", -95, 95, 0, 3); // 起伏地形+溪流小品，西北角安静角落
   addDecorModel("map_trees.glb", 0, -95, 0, 1); // 低模树丛，南边地图边缘成片放置
-  addDecorModel("map_bushes.glb", -95, -60, 0, 1); // 扫描灌木丛，西边地图边缘
+  // 公路桥（american_road.glb）和扫描灌木丛（scanned_plants...glb）源文件是很多材质拼起来的复杂网格，
+  // 压缩工具怎么调参数都简化不动（卡在几十万顶点），实测会把帧率拖到几乎卡死，
+  // 权衡下来砍掉这两个装饰，只保留能大幅简化、顶点数正常的地标建筑/地形/树丛
 
   /* ---------------- 空气中的浮尘粒子，增加废弃工业区的氛围 ---------------- */
   var dustGeometry = new THREE.BufferGeometry();

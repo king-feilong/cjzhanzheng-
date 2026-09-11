@@ -124,6 +124,29 @@
     opacity: 0;
     transition: opacity 0.25s ease;
   }
+
+  /* 开局/重开倒计时：盖在已经露出的战场画面上方，不是盖在开始菜单上方 */
+  #countdown-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 140px;
+    font-weight: 800;
+    color: var(--accent);
+    text-shadow: 0 0 50px rgba(0, 229, 255, 0.85);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 40;
+  }
+  #countdown-overlay.show { animation: countdownPulse 0.7s ease-out; }
+  @keyframes countdownPulse {
+    0% { transform: scale(1.7); opacity: 0; }
+    35% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
   #hit-flash.show { opacity: 1; transition: opacity 0.03s ease; }
 
   /* 倍镜：经典的"圆形窥孔"做法——用一圈巨大的 box-shadow 把圆孔以外的地方全部涂黑 */
@@ -876,11 +899,41 @@
   #tank-enter-btn.show, #tank-exit-btn.show { opacity: 1; pointer-events: auto; }
   #tank-enter-btn:active, #tank-exit-btn:active { background: rgba(0, 229, 255, 0.3); }
   #tank-exit-btn { bottom: 84px; }
+
+  /* 坦克装甲 HUD 条：跟顶部其他战报小方块一样的样式，只在驾驶时显示 */
+  #tank-hp-chip { display: none; }
+  #tank-hp-chip.show { display: block; }
+
+  /* 开炮按钮：只在驾驶坦克时显示，桌面/移动端通用 */
+  #tank-fire-btn {
+    position: absolute;
+    left: 50%;
+    bottom: 34px;
+    transform: translateX(-50%);
+    width: 74px;
+    height: 74px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(20, 18, 14, 0.85);
+    border: 3px solid var(--accent);
+    color: var(--ink);
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 33;
+  }
+  #tank-fire-btn.show { opacity: 1; pointer-events: auto; }
+  #tank-fire-btn:active { background: rgba(0, 229, 255, 0.35); }
 </style>
 
 <div id="stage"></div>
 
 <div id="hit-flash"></div>
+<div id="countdown-overlay"></div>
 <div id="dmg-indicators"></div>
 <div id="scope-overlay">
   <div class="scope-line scope-h"></div>
@@ -909,6 +962,10 @@
   <div class="hud-chip ammo-chip">
     <div class="hud-label">弹药</div>
     <div class="hud-value" id="ammo-val">30</div>
+  </div>
+  <div class="hud-chip ammo-chip" id="tank-hp-chip">
+    <div class="hud-label">装甲</div>
+    <div class="hud-value" id="tank-hp-val">260</div>
   </div>
 </div>
 
@@ -1080,6 +1137,7 @@
 <!-- 坦克上/下车提示按钮：不放进 #touch-layer，桌面端和移动端都要能看到、能点 -->
 <button id="tank-enter-btn" type="button">🚙 驾驶（E）</button>
 <button id="tank-exit-btn" type="button">下车（E）</button>
+<button id="tank-fire-btn" type="button" aria-label="开炮">💥</button>
 
 <script>
 (function () {
@@ -1460,8 +1518,8 @@
   var bodyYaw = 0, bodyYawInited = false;
 
   function toggleViewMode() {
-    if (drivingTank) return; // 开坦克时视角/枪械视图都是坦克专用状态，不接受一/三人称切换
     viewMode = viewMode === "fp" ? "tp" : "fp";
+    if (drivingTank) return; // 开坦克时一/三人称都是坦克自己的镜头逻辑（updateTankDriving 里处理），枪/人物模型本来就是隐藏的，不用跟着切
     if (viewMode === "tp") setScoped(false); // 倍镜只在第一人称下有意义，切到第三人称就自动收起
     playerBody.visible = viewMode === "tp";
     gunView.visible = viewMode === "fp" && !isScoped;
@@ -1474,6 +1532,7 @@
   var tpRightDir = new THREE.Vector3();
   var tpSidePivot = new THREE.Vector3();
   function updateThirdPerson(dt) {
+    if (drivingTank) return; // 开坦克时的镜头（一/三人称都算）完全由 updateTankDriving 自己处理
     playerBody.position.set(camera.position.x, feetY, camera.position.z);
     playerBody.rotation.y = bodyYaw;
     if (viewMode !== "tp") return;
@@ -1679,22 +1738,25 @@
     var canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
     var ctx = canvas.getContext("2d");
+    // 之前色斑 + 草叶线条的密度/对比度都调得太高，草地铺开看起来很"花"（视觉噪点重、很晃眼）；
+    // 这里把色斑数量、线条密度都砍掉大半，颜色也往贴近底色的方向收窄对比，
+    // 整体读起来是一片干净的绿色，细节留一点点意思就够，不用铺满噪点
     ctx.fillStyle = "#3f5a26";
     ctx.fillRect(0, 0, size, size);
-    for (var p = 0; p < 46; p++) {
-      var px = Math.random() * size, py = Math.random() * size, pr = 18 + Math.random() * 55;
-      ctx.fillStyle = Math.random() < 0.5 ? "rgba(30,46,16,0.32)" : "rgba(126,168,68,0.32)";
+    for (var p = 0; p < 22; p++) {
+      var px = Math.random() * size, py = Math.random() * size, pr = 30 + Math.random() * 70;
+      ctx.fillStyle = Math.random() < 0.5 ? "rgba(34,50,20,0.16)" : "rgba(94,128,58,0.16)";
       ctx.beginPath();
       ctx.arc(px, py, pr, 0, Math.PI * 2);
       ctx.fill();
     }
-    for (var i = 0; i < size * size * 0.04; i++) {
+    for (var i = 0; i < size * size * 0.008; i++) {
       var x = Math.random() * size, y = Math.random() * size;
-      var g = 80 + Math.random() * 100;
-      ctx.strokeStyle = "rgba(" + ((g * 0.55) | 0) + "," + (g | 0) + "," + ((g * 0.32) | 0) + "," + (0.22 + Math.random() * 0.3) + ")";
+      var g = 70 + Math.random() * 60;
+      ctx.strokeStyle = "rgba(" + ((g * 0.55) | 0) + "," + (g | 0) + "," + ((g * 0.32) | 0) + "," + (0.14 + Math.random() * 0.14) + ")";
       ctx.lineWidth = 1;
       var ang = -Math.PI / 2 + rr(-0.4, 0.4);
-      var len = 2.5 + Math.random() * 3.5;
+      var len = 2 + Math.random() * 2.5;
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
@@ -1964,6 +2026,7 @@
      不用等真正的坦克模型异步加载完才能生效，也不用让子弹/AI 视线去对一整个高面数载具网格做射线检测 ---------------- */
   var drivableTanks = []; // 走近能看到"驾驶"按钮的坦克列表
   var TANK_EYE_H = 3.3; // 驾驶时的视角高度，比站在地上高一截，像坐在炮塔里
+  var TANK_MAX_HP = 260; // 坦克自己的装甲值：驾驶时挨打先扣这个，不是直接扣玩家血量
   function addWarTank(x, z, rotY, url) {
     var scale = 0.55;
     var rawW = 10.1, rawD = 17.7, rawH = 4.7; // 模型原始（缩放前）大致外接尺寸，量出来的
@@ -1975,7 +2038,7 @@
     scene.add(hitMesh);
     var obstacleEntry = { mesh: hitMesh, box: new THREE.Box3().setFromObject(hitMesh) };
     obstacles.push(obstacleEntry);
-    drivableTanks.push({ x: x, z: z, rotY: rotY, hitMesh: hitMesh, obstacleEntry: obstacleEntry, bh: bh, model: null });
+    drivableTanks.push({ x: x, z: z, rotY: rotY, hitMesh: hitMesh, obstacleEntry: obstacleEntry, bh: bh, model: null, hp: TANK_MAX_HP, destroyed: false });
 
     var tankLoader = new THREE.GLTFLoader();
     tankLoader.load(url, function (gltf) {
@@ -1993,6 +2056,40 @@
   // 军用载具属于东南据点的核心装饰，放两辆在营房/指挥部周围
   addWarTank(50, 95, 0, "tank.glb");
   addWarTank(85, 15, Math.PI / 2, "tank2.glb");
+
+  /* ---------------- 阵营领地标记：地上一圈染色范围 + 旗杆，标出两边的"主场"是哪——
+     蓝方大本营就设在玩家出生点，红方就设在东南据点（本来就是"军事据点"主题，最合适） ---------------- */
+  function addTerritoryMarker(x, z, color) {
+    var ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+    var ring = new THREE.Mesh(new THREE.RingGeometry(6, 6.6, 48), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.06, z);
+    scene.add(ring);
+
+    var fillMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false });
+    var fill = new THREE.Mesh(new THREE.CircleGeometry(6, 48), fillMat);
+    fill.rotation.x = -Math.PI / 2;
+    fill.position.set(x, 0.05, z);
+    scene.add(fill);
+
+    var poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6, metalness: 0.4 });
+    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 5, 8), poleMat);
+    pole.position.set(x, 2.5, z);
+    pole.castShadow = true;
+    scene.add(pole);
+
+    var flagMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7, side: THREE.DoubleSide, emissive: color, emissiveIntensity: 0.3 });
+    var flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), flagMat);
+    flag.position.set(x + 0.85, 4.3, z);
+    flag.castShadow = true;
+    scene.add(flag);
+
+    var light = new THREE.PointLight(color, 1.4, 12);
+    light.position.set(x, 5, z);
+    scene.add(light);
+  }
+  addTerritoryMarker(0, 10, 0x5ff2ff); // 蓝方大本营：玩家/队友出生点
+  addTerritoryMarker(85, 30, 0xff2f6d); // 红方据点：东南军事据点
 
   /* ---------------- 谷仓/鸡舍：跟白房子/工厂拉开风格差异的又一类地图建筑，同样只做外围实心碰撞 ---------------- */
   function addFarmBuilding(x, z, rotY, url, rawW, rawD, rawH) {
@@ -2724,9 +2821,10 @@
   }
 
   // attacker：谁打的这一枪，默认是玩家；队友开火命中敌人时会传自己的队友引用进来，
-  // 这样敌人挨打后除了原地警戒，还会转头去反击真正打中自己的那个目标（玩家或队友）
-  function damageEnemy(enemy, tag, hitPoint, attacker) {
-    var dmg = DAMAGE[tag] || DAMAGE.limb;
+  // 这样敌人挨打后除了原地警戒，还会转头去反击真正打中自己的那个目标（玩家或队友）。
+  // dmgOverride：坦克炮弹这种不走普通武器伤害表的固定伤害，传了就不查 DAMAGE[tag]
+  function damageEnemy(enemy, tag, hitPoint, attacker, dmgOverride) {
+    var dmg = dmgOverride != null ? dmgOverride : (DAMAGE[tag] || DAMAGE.limb);
     enemy.hp -= dmg;
     playHit();
     spawnHitSpark(hitPoint);
@@ -2738,10 +2836,19 @@
     if (enemy.hp <= 0) {
       killEnemy(enemy);
     } else {
-      // 挨打之后进入警戒状态：放弃随机巡逻，转为主动反击打中自己的目标
+      // 挨打之后进入警戒状态：放弃随机巡逻，转为主动反击打中自己的目标——
+      // 但只是"知道是谁打的我、该往哪追"，不代表已经看见对方了！之前这里换目标时没清
+      // visibleSince，等于把"刚才看见队友攒下的视野判定"直接套到新目标身上，
+      // 结果就是躲在掩体后面偷袭一枪，敌人却像开了天眼一样立刻精准打回来——
+      // 明明没看见却被打，这正是"莫名被攻击"的根源。换了新的反击目标就必须清空，
+      // 重新老老实实用视野锥+射线扫到人才能开枪
       enemy.aggro = true;
       enemy.aggroUntil = performance.now() + rr(5000, 8000);
-      enemy.target = attacker || "player";
+      var retaliateTarget = attacker || "player";
+      if (enemy.target !== retaliateTarget) {
+        enemy.target = retaliateTarget;
+        enemy.visibleSince = null;
+      }
       enemy.moveTarget = null;
       enemy.nextMoveTime = 0;
     }
@@ -2785,6 +2892,15 @@
 
   function damagePlayer(amount, sourcePos) {
     if (!gameActive) return;
+    // 开着坦克的时候，"打中玩家"这发子弹实际上是打在车身装甲上，先扣坦克自己的血，
+    // 装甲扛不住了才报废、强制下车——车里的人不会被直接打空血
+    if (drivingTank) {
+      drivingTank.hp -= amount;
+      playHit();
+      updateTankHpUI();
+      if (drivingTank.hp <= 0) destroyTank(drivingTank);
+      return;
+    }
     playerHP -= amount;
     playHurt();
     hitFlashEl.classList.add("show");
@@ -2848,10 +2964,15 @@
     if (tm.hp <= 0) {
       killTeammate(tm);
     } else {
-      // 挨打后立刻转去反击打中自己的敌人，不用等下一次视野判定才发现对方
+      // 挨打后转去追击打中自己的敌人，但跟敌人那边一样，换目标必须清空 visibleSince——
+      // 不然队友也会出现"没看见却精准开火"的问题，得先追过去真正看到对方才能还击
       tm.aggro = true;
       tm.aggroUntil = performance.now() + rr(5000, 8000);
-      tm.target = attacker || null;
+      var retaliateTarget = attacker || null;
+      if (tm.target !== retaliateTarget) {
+        tm.target = retaliateTarget;
+        tm.visibleSince = null;
+      }
       tm.moveTarget = null;
     }
   }
@@ -2898,6 +3019,14 @@
   }
   function playEnemyShot() {
     playNoise(0.09, 0.22, 700, "bandpass");
+  }
+  function playTankStart() {
+    playNoise(0.3, 0.3, 220, "lowpass");
+    playTone(50, 85, 0.4, "sawtooth", 0.25);
+  }
+  function playTankShot() {
+    playTone(70, 24, 0.4, "sawtooth", 0.55);
+    playNoise(0.45, 0.6, 260, "lowpass");
   }
   function playHit() { playTone(880, 440, 0.1, "square", 0.2); }
   function playHurt() { playTone(180, 80, 0.18, "sawtooth", 0.25); }
@@ -3214,9 +3343,11 @@
   // 既能在 SPOT_DELAY 窗口内多次采样保证不是巧合，又不会把射线检测的开销叠加到每一帧
   var SIGHT_CHECK_INTERVAL = 130;
 
-  // target 统一约定：字符串 "player" 代表玩家本人，其余情况是某个 enemy/teammate 对象引用
+  // target 统一约定：字符串 "player" 代表玩家本人，其余情况是某个 enemy/teammate 对象引用；
+  // 玩家的位置用 playerWorldPos()（驾驶坦克时是车的位置），不能直接用 camera.position——
+  // 开坦克第三人称视角下摄像机是跟车视角，位置跟车身本体差得很远
   function targetPosOf(target) {
-    return target === "player" ? camera.position : target.group.position;
+    return target === "player" ? playerWorldPos() : target.group.position;
   }
   function targetIsValid(target) {
     return target === "player" ? gameActive : !!(target && target.alive);
@@ -3251,7 +3382,7 @@
     var now = performance.now();
     var obstacleMeshes = obstacles.map(function (o) { return o.mesh; });
     // 敌人的候选目标是玩家本人 + 所有还活着的蓝方队友，取视野内最近的一个
-    var blueCandidates = [{ pos: camera.position, ref: "player" }];
+    var blueCandidates = [{ pos: playerWorldPos().clone(), ref: "player" }];
     for (var bi = 0; bi < teammates.length; bi++) {
       if (teammates[bi].alive) blueCandidates.push({ pos: teammates[bi].group.position, ref: teammates[bi] });
     }
@@ -3752,23 +3883,63 @@
     })(skinSwatchEls[__sk]);
   }
 
+  // 开局/重开倒计时：3-2-1 数完再真正把 gameActive 打开，数数期间战场已经露出来了但
+  // 打不了枪、敌人也不会动，纯粹给玩家一点心理准备时间，不是一进来就直接开战
+  var countdownEl = document.getElementById("countdown-overlay");
+  function startCountdown(onDone) {
+    var n = 3;
+    function tick() {
+      countdownEl.textContent = n > 0 ? String(n) : "开始";
+      countdownEl.classList.remove("show");
+      void countdownEl.offsetWidth; // 强制重排，让 show 类每次都重新触发一次缩放淡入动画
+      countdownEl.classList.add("show");
+      if (n > 0) {
+        n--;
+        setTimeout(tick, 700);
+      } else {
+        setTimeout(function () { countdownEl.classList.remove("show"); onDone(); }, 500);
+      }
+    }
+    tick();
+  }
+  // requestPointerLock() 必须在用户手势触发的事件里同步调用，隔了 setTimeout 的倒计时之后
+  // 再调就会被浏览器当成不是真正的用户操作直接拒绝——所以拿锁本身还是得马上做，
+  // 用这个标记告诉 pointerlockchange 的回调"这次拿到锁之后要先数倒计时，不能直接开局"，
+  // 跟商店关闭、切窗口再切回来这些普通的重新拿锁场景（不该弹倒计时）区分开
+  var pendingRoundStart = false;
+  function requestGameStartWithCountdown() {
+    tryLockLandscape();
+    if (isTouch) {
+      startCountdown(enterGame);
+    } else {
+      pendingRoundStart = true;
+      canvas.requestPointerLock();
+    }
+  }
+  function beginRoundFromMenu() {
+    overlay.classList.add("hidden"); // 先露出战场画面，倒计时盖在战场上而不是盖在开始菜单上
+    requestGameStartWithCountdown();
+  }
   startBtn.addEventListener("click", function () {
     ensureAudio();
-    tryLockLandscape();
-    if (isTouch) enterGame();
-    else canvas.requestPointerLock();
+    beginRoundFromMenu();
   });
   overlay.addEventListener("click", function (ev) {
     if (isTouch || ev.target === startBtn) return;
     ensureAudio();
-    canvas.requestPointerLock();
+    beginRoundFromMenu();
   });
   document.addEventListener("pointerlockchange", function () {
     // 打开局内商店时会主动 exitPointerLock 以便鼠标能点面板按钮，这个由 openShop 触发的
     // "解锁"不该被当成玩家按 ESC 退出游戏处理，不然商店面板前脚弹出后脚就被 exitGame 关掉；
     // 关闭商店时同理，重新拿锁不需要再跑一遍 enterGame 的敌人计时重置逻辑
-    if (document.pointerLockElement === canvas) { if (!shopOpen) enterGame(); }
-    else { if (!shopOpen) exitGame(); }
+    if (document.pointerLockElement === canvas) {
+      if (shopOpen) return;
+      if (pendingRoundStart) { pendingRoundStart = false; startCountdown(enterGame); }
+      else enterGame();
+    } else {
+      if (!shopOpen) exitGame();
+    }
   });
   document.addEventListener("mousemove", function (ev) {
     if (document.pointerLockElement !== canvas) return;
@@ -3785,6 +3956,9 @@
   var mouseFiring = false;
   document.addEventListener("mousedown", function (ev) {
     if (ev.button !== 0 || isTouch || document.pointerLockElement !== canvas) return;
+    // 桌面端指针锁定后鼠标没有可见光标，没法精确点到屏幕上那颗开炮按钮——
+    // 驾驶坦克时直接把左键也绑到开炮上，跟平时开枪一样"随点随打"
+    if (drivingTank) { tankShoot(); return; }
     mouseFiring = true;
     shoot();
   });
@@ -3900,9 +4074,7 @@
   restartBtn.addEventListener("click", function () {
     ensureAudio();
     resetGame();
-    tryLockLandscape();
-    if (isTouch) enterGame();
-    else canvas.requestPointerLock();
+    requestGameStartWithCountdown();
   });
 
   /* ---------------- 移动端虚拟摇杆 ---------------- */
@@ -4043,10 +4215,15 @@
   /* ---------------- 坦克上/下车按钮：桌面点击、移动端点按都要能用（这俩按钮不在只有触屏才显示的 touch-layer 里） ---------------- */
   tankEnterBtn = document.getElementById("tank-enter-btn");
   tankExitBtn = document.getElementById("tank-exit-btn");
+  tankFireBtn = document.getElementById("tank-fire-btn");
+  tankHpChip = document.getElementById("tank-hp-chip");
+  tankHpVal = document.getElementById("tank-hp-val");
   tankEnterBtn.addEventListener("click", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); });
   tankEnterBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); }, { passive: false });
   tankExitBtn.addEventListener("click", function (ev) { ev.preventDefault(); exitTank(); });
   tankExitBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); exitTank(); }, { passive: false });
+  tankFireBtn.addEventListener("click", function (ev) { ev.preventDefault(); tankShoot(); });
+  tankFireBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); tankShoot(); }, { passive: false });
 
   /* ---------------- 倍镜瞄准：桌面端按住鼠标右键，移动端按住镜头按钮 ---------------- */
   var isScoped = false;
@@ -4082,11 +4259,27 @@
   var drivingTank = null; // 当前正在驾驶的坦克对象（drivableTanks 里的一项），没驾驶时是 null
   var TANK_ENTER_RADIUS = 4.5;
   var TANK_SPEED = 9, TANK_RADIUS = 2.3;
+  // 模型本地"炮口朝向"跟游戏朝向约定（rotY=0 时车头朝 -Z）之间的夹角修正值：
+  // 之前这里一直是 0（相当于假设模型摆正朝向刚好对齐约定），但两辆坦克原本是按各自停车位
+  // 手动调的 rotY（0 和 90°），从没验证过跟这个约定是否一致——这正是"驾驶方向不对、看不到炮管"的根源。
+  // 用第三人称跟车视角实测校准过：90° 时炮管正好指向摄像机看过去的正前方，是对的
+  var TANK_MODEL_YAW_OFFSET = Math.PI / 2;
+  var TANK_CAM_DIST = 11, TANK_CAM_HEIGHT = 5; // 第三人称跟车视角：拉远拉高才能看到整台车+炮管
+  var TANK_FP_FORWARD = 1.6, TANK_FP_HEIGHT = 2.7; // 第一人称视角相对车体中心的前移/抬高，能看见炮管往前指
   var tankNearby = null; // 当前离得够近、可以按按钮上车的那辆坦克
   // DOM 引用在下面触控/按钮那段统一获取后回填到这两个变量上；这里只声明不赋值——
   // 那段按钮事件绑定代码在源码顺序上在这段之前就执行了，要是这里写 "= null" 会按执行顺序
   // 把已经绑定好的 DOM 引用覆盖回 null（var 声明会提升，但赋值不会，两处顺序错了会互相打架）
-  var tankEnterBtn, tankExitBtn;
+  var tankEnterBtn, tankExitBtn, tankFireBtn, tankHpChip, tankHpVal;
+
+  // 敌人 AI/血包拾取等"游戏逻辑"要知道玩家实际在哪，驾驶坦克时这个位置是坦克的位置，
+  // 不是摄像机渲染位置——第一人称视角为了能看到炮管会往前探一点、第三人称更是跟车视角完全脱开，
+  // 拿 camera.position 当玩家位置会导致敌人/血包判定跟实际车辆位置对不上
+  var __playerPosVec = new THREE.Vector3();
+  function playerWorldPos() {
+    if (drivingTank) return __playerPosVec.set(drivingTank.x, TANK_EYE_H, drivingTank.z);
+    return __playerPosVec.copy(camera.position);
+  }
 
   // 坦克自己移动时的碰撞检测要跳过它自身那个障碍物条目，不然车身正好压在自己的碰撞盒上，一步都挪不动
   function isClearForTank(x, z, r, excludeEntry) {
@@ -4104,6 +4297,7 @@
     var nearest = null, nearestDist = TANK_ENTER_RADIUS;
     for (var i = 0; i < drivableTanks.length; i++) {
       var t = drivableTanks[i];
+      if (t.destroyed) continue;
       var d = Math.hypot(camera.position.x - t.x, camera.position.z - t.z);
       if (d < nearestDist) { nearestDist = d; nearest = t; }
     }
@@ -4111,21 +4305,37 @@
     tankEnterBtn.classList.toggle("show", !!nearest);
   }
 
+  function updateTankHpUI() {
+    if (!tankHpVal || !drivingTank) return;
+    tankHpVal.textContent = Math.max(0, Math.round(drivingTank.hp));
+  }
+
   function enterTank(t) {
-    if (!t || drivingTank || !gameActive) return;
+    if (!t || drivingTank || !gameActive || t.destroyed) return;
     drivingTank = t;
     yaw = t.rotY; // 对齐坦克当前朝向，上车瞬间视角不会突然甩一下
-    camera.position.set(t.x, TANK_EYE_H, t.z);
+    // 坦克默认用第三人称跟车视角上车：能看清整台车（包括炮管）朝哪开，
+    // 第一人称视角贴着车体中心，停车位靠建筑物很近时容易一上车就撞进墙里什么都看不见——
+    // 玩家仍然可以按 V/视角按钮手动切回第一人称
+    viewMode = "tp";
+    tpFollowYaw = yaw;
+    tpCurrentDistance = TP_DISTANCE;
+    tpInited = true;
     gunView.visible = false;
     playerBody.visible = false;
     if (tankEnterBtn) tankEnterBtn.classList.remove("show");
     if (tankExitBtn) tankExitBtn.classList.add("show");
+    if (tankFireBtn) tankFireBtn.classList.add("show");
+    if (tankHpChip) tankHpChip.classList.add("show");
+    updateTankHpUI();
+    playTankStart();
   }
 
   function exitTank() {
     var t = drivingTank;
     if (!t) return;
     drivingTank = null;
+    stopTankEngineSound();
     // 从坦克侧面下车，找不到落脚点就试试另一侧
     var ex = t.x + Math.sin(t.rotY + Math.PI / 2) * 3.4, ez = t.z + Math.cos(t.rotY + Math.PI / 2) * 3.4;
     if (!isClear(ex, ez, PLAYER_R)) {
@@ -4137,6 +4347,51 @@
     gunView.visible = viewMode === "fp" && !isScoped;
     playerBody.visible = viewMode === "tp";
     if (tankExitBtn) tankExitBtn.classList.remove("show");
+    if (tankFireBtn) tankFireBtn.classList.remove("show");
+    if (tankHpChip) tankHpChip.classList.remove("show");
+  }
+
+  // 坦克被打爆：强制下车（伤害已经算在装甲上了，不用再额外扣玩家血），车辆本身报废、
+  // 不能再进，车身留在原地烧黑当战场痕迹，跟人物墓碑是同一个思路
+  function destroyTank(t) {
+    t.destroyed = true;
+    if (t.model) {
+      t.model.traverse(function (o) {
+        if (o.isMesh && o.material && o.material.color) {
+          o.material = o.material.clone();
+          o.material.color.multiplyScalar(0.25);
+        }
+      });
+    }
+    if (drivingTank === t) exitTank();
+  }
+
+  // 引擎低鸣：跟开火/命中这种一次性音效不一样，得是能持续拉住的循环音，
+  // 开动/停下只是渐变音量，不是每次都重新起一个新音源
+  var tankEngineOsc = null, tankEngineGain = null;
+  function updateTankEngineSound(active) {
+    var ctx = ensureAudio();
+    if (active) {
+      if (!tankEngineOsc) {
+        tankEngineOsc = ctx.createOscillator();
+        tankEngineOsc.type = "sawtooth";
+        tankEngineOsc.frequency.value = 55;
+        tankEngineGain = ctx.createGain();
+        tankEngineGain.gain.value = 0;
+        tankEngineOsc.connect(tankEngineGain).connect(ctx.destination);
+        tankEngineOsc.start();
+      }
+      tankEngineGain.gain.setTargetAtTime(0.11, ctx.currentTime, 0.08);
+    } else if (tankEngineGain) {
+      tankEngineGain.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
+    }
+  }
+  function stopTankEngineSound() {
+    if (!tankEngineOsc) return;
+    var osc = tankEngineOsc, gain = tankEngineGain;
+    tankEngineOsc = null; tankEngineGain = null;
+    try { gain.gain.setTargetAtTime(0, ensureAudio().currentTime, 0.1); } catch (e) {}
+    setTimeout(function () { try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch (e) {} }, 300);
   }
 
   function updateTankDriving(dt) {
@@ -4147,16 +4402,60 @@
     else { if (keys.KeyW || keys.ArrowUp) fwd += 1; if (keys.KeyS || keys.ArrowDown) fwd -= 1; }
     fwd = Math.max(-1, Math.min(1, fwd));
     var step = TANK_SPEED * fwd * dt;
-    var nx = camera.position.x - Math.sin(t.rotY) * step;
-    var nz = camera.position.z - Math.cos(t.rotY) * step;
-    if (isClearForTank(nx, camera.position.z, TANK_RADIUS, t.obstacleEntry)) camera.position.x = nx;
-    if (isClearForTank(camera.position.x, nz, TANK_RADIUS, t.obstacleEntry)) camera.position.z = nz;
-    camera.position.y = TANK_EYE_H;
-    t.x = camera.position.x;
-    t.z = camera.position.z;
+    var nx = t.x - Math.sin(t.rotY) * step;
+    var nz = t.z - Math.cos(t.rotY) * step;
+    if (isClearForTank(nx, t.z, TANK_RADIUS, t.obstacleEntry)) t.x = nx;
+    if (isClearForTank(t.x, nz, TANK_RADIUS, t.obstacleEntry)) t.z = nz;
     t.hitMesh.position.set(t.x, t.hitMesh.position.y, t.z);
     t.obstacleEntry.box.setFromObject(t.hitMesh);
-    if (t.model) { t.model.position.set(t.x, 0.05, t.z); t.model.rotation.y = t.rotY; }
+    if (t.model) { t.model.position.set(t.x, 0.05, t.z); t.model.rotation.y = t.rotY + TANK_MODEL_YAW_OFFSET; }
+    updateTankEngineSound(Math.abs(fwd) > 0.05);
+
+    if (viewMode === "tp") {
+      // 第三人称跟车视角：跟玩家平时的过肩视角同一套公式，只是围着坦克转而不是围着人转
+      camera.position.set(t.x, TANK_EYE_H, t.z); // camera 仍然代表逻辑瞄准点，用于开炮射线
+      tpCamera.fov = camera.fov;
+      tpCamera.aspect = camera.aspect;
+      tpCamera.updateProjectionMatrix();
+      tpCamera.position.set(t.x + Math.sin(t.rotY) * TANK_CAM_DIST, TANK_CAM_HEIGHT, t.z + Math.cos(t.rotY) * TANK_CAM_DIST);
+      tpCamera.rotation.set(pitch, yaw, 0, "YXZ");
+    } else {
+      // 第一人称：视角往车头方向探一点，不然正好卡在炮塔转轴上，炮管整根都在视野外看不见
+      camera.position.set(t.x - Math.sin(t.rotY) * TANK_FP_FORWARD, TANK_FP_HEIGHT, t.z - Math.cos(t.rotY) * TANK_FP_FORWARD);
+    }
+  }
+
+  /* ---------------- 坦克开炮 ---------------- */
+  var TANK_FIRE_CD = 1700, TANK_DAMAGE = 65, TANK_RANGE = 90;
+  var lastTankFire = 0;
+  function tankShoot() {
+    if (!drivingTank || !gameActive) return;
+    var now = performance.now();
+    if (now - lastTankFire < TANK_FIRE_CD) return;
+    lastTankFire = now;
+    playTankShot();
+
+    var t = drivingTank;
+    var muzzlePos = new THREE.Vector3(
+      t.x - Math.sin(t.rotY) * 4.6,
+      TANK_EYE_H - 0.35,
+      t.z - Math.cos(t.rotY) * 4.6
+    );
+    spawnMuzzleFlashAt(muzzlePos, 0x5ff2ff);
+
+    raycaster.far = TANK_RANGE;
+    raycaster.setFromCamera(center, camera);
+    var targets = obstacles.map(function (o) { return o.mesh; }).concat(allEnemyPartMeshes());
+    var hits = raycaster.intersectObjects(targets, false);
+    var fwd = new THREE.Vector3();
+    camera.getWorldDirection(fwd);
+    var tracerEnd = hits.length ? hits[0].point : camera.position.clone().add(fwd.clone().multiplyScalar(TANK_RANGE));
+    spawnTracer(muzzlePos, tracerEnd, 0x5ff2ff);
+
+    if (!hits.length) return;
+    var found = findEnemyByMesh(hits[0].object);
+    if (found) damageEnemy(found.enemy, found.tag, hits[0].point, "player", TANK_DAMAGE);
+    else spawnBulletDecal(hits[0]);
   }
 
   /* ---------------- 跳跃（脚部高度用绝对世界坐标跟踪，能跳到掩体顶部再落地站住） ---------------- */

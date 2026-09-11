@@ -927,6 +927,7 @@
     </div>
     <div class="shop-section-label">人物皮肤</div>
     <div id="skin-swatches">
+      <button class="skin-swatch" data-skin="original" style="--swatch-color:conic-gradient(#3d5266,#8a6a45,#c9cdd6,#1c1e24,#b8263f)" type="button"><span>原厂本色</span></button>
       <button class="skin-swatch" data-skin="urban" style="--swatch-color:#3d5266" type="button"><span>都市蓝</span></button>
       <button class="skin-swatch" data-skin="desert" style="--swatch-color:#8a6a45" type="button"><span>荒漠棕</span></button>
       <button class="skin-swatch" data-skin="arctic" style="--swatch-color:#c9cdd6" type="button"><span>极地白</span></button>
@@ -1187,14 +1188,13 @@
   var scene = new THREE.Scene();
 
   // 随机天气：影响天空颜色、雾效、光照强度，云层浓淡，下雨时额外加一层雨滴粒子
-  // 赛博夜色主题的四种天气：霓虹夜 / 浓雾夜 / 毒雾（经典赛博朋克污染雾霾）/ 赛博夜雨
-  // 天空/雾用深色调渲染夜晚氛围，但实际光照（sun/hemi）颜色要够亮，不然地面/掩体/敌人会糊成一片黑，
-  // 快节奏射击游戏可读性优先于纯写实的暗夜效果
+  // 改成白天主题的四种天气：晴空蓝天 / 多云 / 燥热薄霾 / 白日阵雨——蓝天白云，
+  // 光照（sun/hemi）也调回自然日光的配色，不再是之前赛博夜战那套深色调
   var WEATHER_PRESETS = {
-    clear: { skyTop: 0x050415, skyBottom: 0x2c2060, fogColor: 0x2a2358, fogDensity: 0.0075, sunColor: 0xc4d8ff, sunIntensity: 1.65, hemiSky: 0xbcb4f0, hemiGround: 0x3a3468, hemiIntensity: 1.3, cloudOpacity: 0.45, cloudCount: 14, rain: false },
-    overcast: { skyTop: 0x110d1e, skyBottom: 0x3a3055, fogColor: 0x2f2840, fogDensity: 0.0098, sunColor: 0xc6c8ec, sunIntensity: 1.1, hemiSky: 0xa198d8, hemiGround: 0x322c58, hemiIntensity: 1.1, cloudOpacity: 0.85, cloudCount: 26, rain: false },
-    haze: { skyTop: 0x141a0c, skyBottom: 0x4a5a20, fogColor: 0x596a2c, fogDensity: 0.012, sunColor: 0xe4f2a0, sunIntensity: 1.3, hemiSky: 0xc8dc86, hemiGround: 0x3e3e20, hemiIntensity: 1.15, cloudOpacity: 0.5, cloudCount: 10, rain: false },
-    rain: { skyTop: 0x030308, skyBottom: 0x1c1436, fogColor: 0x201938, fogDensity: 0.0135, sunColor: 0xacb8f0, sunIntensity: 1.05, hemiSky: 0x8e8cd4, hemiGround: 0x2a2448, hemiIntensity: 1.05, cloudOpacity: 0.9, cloudCount: 30, rain: true },
+    clear: { skyTop: 0x2f7fd6, skyBottom: 0xcfe9ff, fogColor: 0xd8ecff, fogDensity: 0.0035, sunColor: 0xfff4d8, sunIntensity: 2.1, hemiSky: 0xbfe0ff, hemiGround: 0x8a7a5c, hemiIntensity: 1.2, cloudOpacity: 0.85, cloudCount: 14, rain: false },
+    overcast: { skyTop: 0x8fa6ba, skyBottom: 0xdde6ea, fogColor: 0xcdd7dd, fogDensity: 0.006, sunColor: 0xeef1f4, sunIntensity: 1.35, hemiSky: 0xb9c6cd, hemiGround: 0x74796c, hemiIntensity: 1.2, cloudOpacity: 0.92, cloudCount: 28, rain: false },
+    haze: { skyTop: 0x9dc4e6, skyBottom: 0xe9ddb8, fogColor: 0xe6d9ac, fogDensity: 0.0075, sunColor: 0xfff0c8, sunIntensity: 1.9, hemiSky: 0xd9e7c6, hemiGround: 0x8d7b4e, hemiIntensity: 1.15, cloudOpacity: 0.55, cloudCount: 9, rain: false },
+    rain: { skyTop: 0x5f7385, skyBottom: 0xa9b7bd, fogColor: 0x8b99a1, fogDensity: 0.011, sunColor: 0xc9d5dd, sunIntensity: 1.0, hemiSky: 0x95a5ad, hemiGround: 0x555d51, hemiIntensity: 1.05, cloudOpacity: 0.92, cloudCount: 32, rain: true },
   };
   var WEATHER_KEYS = Object.keys(WEATHER_PRESETS);
   var weather = WEATHER_PRESETS[WEATHER_KEYS[(Math.random() * WEATHER_KEYS.length) | 0]];
@@ -1296,7 +1296,8 @@
   var gunModelLoadToken = 0; // 切换武器时上一把还没加载完的模型如果这时候才回调，不能覆盖新选的枪
   // 之前换皮肤只改了第三人称军服颜色——第一人称压根看不到自己身体，只看得到枪，
   // 玩家点了换色摸不到任何变化，感觉像没生效。这里把当前皮肤色也应用到枪身材质上：
-  // 每次枪械模型加载完，都记下它所有网格的材质，换肤时统一着色
+  // 每次枪械模型加载完，都记下它所有网格的材质【以及换色前的原始颜色】，换肤时统一着色；
+  // 记原始色是因为之前每次加载完直接覆盖颜色，原厂本色从没被存下来过，玩家想换回原色根本做不到
   var gunSkinMaterials = [];
   function loadGunModel(weapon) {
     var myToken = ++gunModelLoadToken;
@@ -1312,11 +1313,14 @@
           o.castShadow = false;
           o.frustumCulled = false;
           var mats = Array.isArray(o.material) ? o.material : [o.material];
-          for (var m = 0; m < mats.length; m++) if (mats[m] && mats[m].color) gunSkinMaterials.push(mats[m]);
+          for (var m = 0; m < mats.length; m++) if (mats[m] && mats[m].color) gunSkinMaterials.push({ mat: mats[m], baseColor: mats[m].color.clone() });
         }
       });
       if (typeof currentSkin !== "undefined" && currentSkin) {
-        for (var g = 0; g < gunSkinMaterials.length; g++) gunSkinMaterials[g].color.set(currentSkin.color);
+        for (var g = 0; g < gunSkinMaterials.length; g++) {
+          var entry = gunSkinMaterials[g];
+          entry.mat.color.set(currentSkin.color !== null ? currentSkin.color : entry.baseColor);
+        }
       }
       while (gunView.children.length) gunView.remove(gunView.children[0]);
       gunView.add(model);
@@ -1336,6 +1340,7 @@
   // 跟屏幕上实际看到的过肩人物位置完全对不上，子弹会像是从屏幕正中间凭空飞出来
   var tpMuzzleTip = new THREE.Object3D();
   var playerSkinMaterial = null; // 局内商店切换人物皮肤时改这个材质的颜色
+  var playerSkinBaseColor = null; // 建模时的原始军服颜色，切回"原厂本色"时用
   var playerMixer = null;
   var playerAnimState = null;
   var playerMoving = false;
@@ -1355,6 +1360,7 @@
         surfaceMesh.material = surfaceMesh.material.clone();
         surfaceMesh.material.color.set(0x3d5266); // 蓝灰色军服，跟敌人的红棕色区分
         playerSkinMaterial = surfaceMesh.material;
+        playerSkinBaseColor = playerSkinMaterial.color.clone();
       }
       playerBody.add(charRoot);
 
@@ -1381,6 +1387,7 @@
     } else {
       var uniformMat = new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.75 });
       playerSkinMaterial = uniformMat;
+      playerSkinBaseColor = playerSkinMaterial.color.clone();
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xb98a63, roughness: 0.8 });
       var idMat = new THREE.MeshStandardMaterial({ color: 0x3b7fc4, roughness: 0.5, emissive: 0x0a2a4a, emissiveIntensity: 0.35 });
       var gunMat2 = new THREE.MeshStandardMaterial({ color: 0x2a281f, roughness: 0.6 });
@@ -1486,15 +1493,15 @@
   // sRGB 输出 + 色调映射，画面对比度和色彩会明显丰富一些
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.45; // 夜战场景整体调暗了，曝光补一点，保证还能看清敌人
+  renderer.toneMappingExposure = 1.05; // 改回白天场景后不需要再靠曝光硬提亮，自然日光本身就够亮
   stage.appendChild(renderer.domElement);
 
-  // 后处理：Bloom 辉光，霓虹灯光/枪口火光/警示灯这些高亮元素会自然"溢出"发光，赛博朋克夜景的质感主要靠它撑起来；
-  // threshold 调得比较高，只有真正很亮的东西（灯光、发光贴花）才会起辉光，不会让整个场景糊成一片
+  // 后处理：Bloom 辉光，枪口火光/警示灯这些高亮元素会自然"溢出"发光；
+  // threshold 比夜战时调得更高一点，避免白天本就明亮的天空/地面被误判成"发光"而糊成一片
   var composer = new THREE.EffectComposer(renderer);
   var renderPass = new THREE.RenderPass(scene, camera);
   composer.addPass(renderPass);
-  var bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.55, 0.82);
+  var bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.55, 0.92);
   composer.addPass(bloomPass);
   // 后处理链路会绕开 WebGLRenderer 自带的 antialias（离屏渲染目标默认没有多重采样），
   // 边缘容易出现锯齿；加一道 SMAA 在最后把边缘抗锯齿补回来，比开多重采样渲染目标更省性能
@@ -1643,18 +1650,18 @@
     var canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
     var ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#2c3d1e";
+    ctx.fillStyle = "#3f5a26";
     ctx.fillRect(0, 0, size, size);
     for (var p = 0; p < 46; p++) {
       var px = Math.random() * size, py = Math.random() * size, pr = 18 + Math.random() * 55;
-      ctx.fillStyle = Math.random() < 0.5 ? "rgba(18,26,12,0.35)" : "rgba(64,82,36,0.3)";
+      ctx.fillStyle = Math.random() < 0.5 ? "rgba(30,46,16,0.32)" : "rgba(126,168,68,0.32)";
       ctx.beginPath();
       ctx.arc(px, py, pr, 0, Math.PI * 2);
       ctx.fill();
     }
     for (var i = 0; i < size * size * 0.04; i++) {
       var x = Math.random() * size, y = Math.random() * size;
-      var g = 45 + Math.random() * 75;
+      var g = 80 + Math.random() * 100;
       ctx.strokeStyle = "rgba(" + ((g * 0.55) | 0) + "," + (g | 0) + "," + ((g * 0.32) | 0) + "," + (0.22 + Math.random() * 0.3) + ")";
       ctx.lineWidth = 1;
       var ang = -Math.PI / 2 + rr(-0.4, 0.4);
@@ -2328,6 +2335,42 @@
     if (bTries < 20) addBush(bx, bz);
   }
 
+  // ---------------- 3D 草丛：光有贴图看着太平了，加一批立起来的草叶，高矮随机分布 ----------------
+  // 整张 220x220 地图铺满真实草叶完全铺不起（草叶数量会是天文数字），用 InstancedMesh 撒一批
+  // 稀疏草丛，一次 draw call 画完，开销很低；配合下面的贴图，近处有"真草"层次感，远处靠贴图收尾
+  (function buildGrassField() {
+    var bladeGeo = new THREE.PlaneGeometry(0.09, 1, 1, 3);
+    bladeGeo.translate(0, 0.5, 0); // 底部对齐原点，实例位置直接摆在地面高度就行
+    var posAttr = bladeGeo.attributes.position;
+    for (var vi = 0; vi < posAttr.count; vi++) {
+      var h = posAttr.getY(vi); // 0 根部 ~ 1 叶尖
+      if (h > 0.55) posAttr.setX(vi, posAttr.getX(vi) * (1 - (h - 0.55) * 0.7)); // 叶尖收窄，不是死板的矩形草叶
+    }
+
+    var bladeMat = new THREE.MeshLambertMaterial({ color: 0x4f8a2e, side: THREE.DoubleSide });
+    var GRASS_COUNT = 2600;
+    var grassMesh = new THREE.InstancedMesh(bladeGeo, bladeMat, GRASS_COUNT);
+    grassMesh.castShadow = false;
+    grassMesh.receiveShadow = false;
+    var dummy = new THREE.Object3D();
+    var placed = 0, gTries = 0;
+    while (placed < GRASS_COUNT && gTries < GRASS_COUNT * 4) {
+      gTries++;
+      var gx = rr(-HALF + 3, HALF - 3), gz = rr(-HALF + 3, HALF - 3);
+      if (!isClear(gx, gz, 0.35)) continue;
+      var gh = rr(0.16, 0.5); // 有高有矮
+      dummy.position.set(gx, 0, gz);
+      dummy.rotation.y = rr(0, Math.PI * 2);
+      dummy.scale.set(rr(0.8, 1.3), gh, rr(0.8, 1.3));
+      dummy.updateMatrix();
+      grassMesh.setMatrixAt(placed, dummy.matrix);
+      placed++;
+    }
+    grassMesh.count = placed;
+    grassMesh.instanceMatrix.needsUpdate = true;
+    scene.add(grassMesh);
+  })();
+
   var PLAYER_R = 0.4, MOVE_SPEED = 6.2;
 
   function canMoveTo(x, z) { return isClear(x, z, PLAYER_R, feetY); }
@@ -2505,6 +2548,8 @@
       aggro: false,
       aggroUntil: 0,
       nextAggroRetarget: 0,
+      visibleSince: null, // 持续"看到"玩家的起始时间戳；断线就清空，重新累计
+      nextSightCheck: 0,
     };
   }
   for (var e = 0; e < ENEMY_COUNT; e++) enemies.push(createEnemy());
@@ -2544,6 +2589,30 @@
   }
   updateTargetInfo();
 
+  // 敌人死亡后不再直接消失，原地留一个墓碑标记——几何体/材质在所有墓碑之间共用（跟弹痕贴花
+  // 同样的思路），新增墓碑不用额外创建资源，重开一局清空时也不用逐个 dispose
+  var tombstones = [];
+  var tombstoneSlabGeo = new THREE.BoxGeometry(0.5, 0.62, 0.12);
+  var tombstoneBaseGeo = new THREE.BoxGeometry(0.62, 0.1, 0.22);
+  var tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6a64, roughness: 0.95 });
+  function spawnTombstone(x, z) {
+    var group = new THREE.Group();
+    var slab = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
+    slab.position.y = 0.31;
+    slab.rotation.x = -0.06; // 略微前倾，插在地里的沧桑感
+    slab.castShadow = true;
+    slab.receiveShadow = true;
+    group.add(slab);
+    var base = new THREE.Mesh(tombstoneBaseGeo, tombstoneMat);
+    base.position.y = 0.05;
+    base.receiveShadow = true;
+    group.add(base);
+    group.position.set(x, 0, z);
+    group.rotation.y = rr(0, Math.PI * 2);
+    scene.add(group);
+    tombstones.push(group);
+  }
+
   function killEnemy(enemy) {
     enemy.alive = false;
     remainingEnemies--;
@@ -2576,6 +2645,7 @@
       },
       dispose: function () {
         enemy.mixerDone = true;
+        spawnTombstone(enemy.group.position.x, enemy.group.position.z);
         for (var i = 0; i < enemy.parts.length; i++) {
           enemy.parts[i].mesh.geometry.dispose();
           enemy.parts[i].mesh.material.dispose();
@@ -2740,6 +2810,24 @@
     return new THREE.CanvasTexture(c);
   })();
 
+  // 枪口火光的点光源复用池：以前每次开火都 new 一个 PointLight 再 scene.add/remove，
+  // 场景里"实时生效的光源数量"每开一枪就变一次，Three.js 会因此给所有受光照材质重新编译着色器——
+  // 这正是"移动开枪卡顿"的根源（跟医疗包拾取卡顿是同一类问题）。改成固定数量、常驻场景、
+  // 只改位置和强度的灯光池，开火频率再高也不会再触发着色器重编译
+  var MUZZLE_LIGHT_POOL_SIZE = 8;
+  var muzzleLightPool = [];
+  for (var __mli = 0; __mli < MUZZLE_LIGHT_POOL_SIZE; __mli++) {
+    var __ml = new THREE.PointLight(0xffffff, 0, 6);
+    scene.add(__ml);
+    muzzleLightPool.push(__ml);
+  }
+  var muzzleLightCursor = 0;
+  function getMuzzleLight() {
+    var l = muzzleLightPool[muzzleLightCursor];
+    muzzleLightCursor = (muzzleLightCursor + 1) % muzzleLightPool.length;
+    return l;
+  }
+
   // 第一人称用第一人称枪口，第三人称用挂在过肩可见人物手上那把枪的枪口——
   // 不然第三人称下枪口火光/弹道永远从看不见的第一人称枪（屏幕中心附近）冒出来，跟画面里的人物对不上
   function getMuzzlePoint() {
@@ -2750,11 +2838,13 @@
   function spawnMuzzleFlash() {
     var pos = getMuzzlePoint(); // 火光要在真实枪口位置，而不是屏幕中心附近
 
-    var light = new THREE.PointLight(0x5ff2ff, 3, 6);
+    var light = getMuzzleLight();
+    light.color.set(0x5ff2ff);
+    light.intensity = 3;
+    light.distance = 6;
     light.position.copy(pos);
-    scene.add(light);
     effects.push({
-      obj: light, start: performance.now(), duration: 55,
+      noRemove: true, start: performance.now(), duration: 55,
       update: function (t) { light.intensity = 3 * (1 - t); },
     });
 
@@ -2831,7 +2921,7 @@
       var eff = effects[i];
       var t = (now - eff.start) / eff.duration;
       if (t >= 1) {
-        scene.remove(eff.obj);
+        if (eff.obj && !eff.noRemove) scene.remove(eff.obj); // noRemove：复用池里的灯光，绝不能从场景移除
         if (eff.dispose) eff.dispose();
         effects.splice(i, 1);
       } else {
@@ -2901,8 +2991,9 @@
   }
 
   // 人物皮肤：没有单独的换装贴图/模型，做法是直接改第三人称军服材质的颜色——
-  // 低成本但够用，商店里先只放几种纯色方案
+  // 低成本但够用，商店里先只放几种纯色方案，外加一个"原厂本色"选项（不上色，用枪/军服本来的颜色）
   var SKINS = {
+    original: { key: "original", name: "原厂本色", color: null },
     urban: { key: "urban", name: "都市蓝", color: 0x3d5266 },
     desert: { key: "desert", name: "荒漠棕", color: 0x8a6a45 },
     arctic: { key: "arctic", name: "极地白", color: 0xc9cdd6 },
@@ -2914,9 +3005,13 @@
     var s = SKINS[key];
     if (!s) return;
     currentSkin = s;
-    if (playerSkinMaterial) playerSkinMaterial.color.set(s.color);
-    // 第一人称主要看得到的是枪，不是自己身体，枪身材质也要一起着色，不然玩家会觉得"点了没反应"
-    for (var g = 0; g < gunSkinMaterials.length; g++) gunSkinMaterials[g].color.set(s.color);
+    if (playerSkinMaterial) playerSkinMaterial.color.set(s.color !== null ? s.color : playerSkinBaseColor);
+    // 第一人称主要看得到的是枪，不是自己身体，枪身材质也要一起着色，不然玩家会觉得"点了没反应"；
+    // 选"原厂本色"则各自恢复到加载时记下的原始颜色，而不是统一套用同一个色值
+    for (var g = 0; g < gunSkinMaterials.length; g++) {
+      var entry = gunSkinMaterials[g];
+      entry.mat.color.set(s.color !== null ? s.color : entry.baseColor);
+    }
   }
 
   function shoot() {
@@ -2962,11 +3057,13 @@
   var ENEMY_HIT_CHANCE = 0.5;
   var enemyRay = new THREE.Raycaster();
   function spawnMuzzleFlashAt(position, color) {
-    var light = new THREE.PointLight(color || 0xff2f6d, 2.6, 6);
+    var light = getMuzzleLight();
+    light.color.set(color || 0xff2f6d);
+    light.intensity = 2.6;
+    light.distance = 6;
     light.position.copy(position);
-    scene.add(light);
     effects.push({
-      obj: light, start: performance.now(), duration: 70,
+      noRemove: true, start: performance.now(), duration: 70,
       update: function (t) { light.intensity = 2.6 * (1 - t); },
     });
 
@@ -2990,32 +3087,51 @@
       dispose: function () { mat.dispose(); },
     });
   }
+  // 敌人得持续"看到"玩家超过这个时长才算真被发现——只做单次几何判定的话，敌人哪怕只是
+  // 巡逻转身时凑巧扫过玩家方向那一瞬间也会立刻开火，玩家看到的就是"明明没看见我却还是中弹"
+  var SPOT_DELAY = 350;
+  // 视线判定（射线检测）比较费，不需要每帧都对所有敌人做；按这个间隔抽样，
+  // 既能在 SPOT_DELAY 窗口内多次采样保证不是巧合，又不会把射线检测的开销叠加到每一帧
+  var SIGHT_CHECK_INTERVAL = 130;
   function updateEnemyAI() {
     if (!gameActive) return;
     var now = performance.now();
     var obstacleMeshes = obstacles.map(function (o) { return o.mesh; });
     for (var i = 0; i < enemies.length; i++) {
       var en = enemies[i];
-      if (!en.alive || now < en.nextFireTime) continue;
+      if (!en.alive) continue;
+
+      if (now >= en.nextSightCheck) {
+        en.nextSightCheck = now + SIGHT_CHECK_INTERVAL;
+        var eyePos = en.group.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        var toPlayer = camera.position.clone().sub(eyePos);
+        var dist = toPlayer.length();
+        var canSee = false;
+        if (dist <= ENEMY_RANGE) {
+          toPlayer.normalize();
+          // 视野盲区：玩家得在敌人朝向前方大致 120° 的锥形范围内才可能被看到
+          var facingX = -Math.sin(en.group.rotation.y), facingZ = -Math.cos(en.group.rotation.y);
+          var facingDot = facingX * toPlayer.x + facingZ * toPlayer.z;
+          if (facingDot >= 0.5) {
+            enemyRay.set(eyePos, toPlayer);
+            var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
+            if (!blocks.length || blocks[0].distance >= dist - 0.5) canSee = true; // 没被掩体挡住视线
+          }
+        }
+        if (canSee) {
+          if (en.visibleSince === null) en.visibleSince = now;
+          // 真被看到才进入警戒追击——之前只有挨打才会 aggro，没被发现时敌人只是按巡逻节奏乱开火
+          en.aggro = true;
+          en.aggroUntil = now + rr(5000, 8000);
+        } else {
+          en.visibleSince = null;
+        }
+      }
+
+      // 没有持续可见足够时长，或者还在开火冷却里，都不允许开枪
+      if (en.visibleSince === null || now - en.visibleSince < SPOT_DELAY) continue;
+      if (now < en.nextFireTime) continue;
       en.nextFireTime = now + rr(1500, 3200);
-
-      var eyePos = en.group.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-      var toPlayer = camera.position.clone().sub(eyePos);
-      var dist = toPlayer.length();
-      if (dist > ENEMY_RANGE) continue;
-      toPlayer.normalize();
-
-      // 视野盲区：玩家得在敌人朝向前方大致 120° 的锥形范围内才可能被发现/攻击，
-      // 不然背对着玩家、或者玩家绕到侧后方，敌人还是照样能精确开枪，非常不讲道理；
-      // 之前是 140°、且这个判断在敌人转身/移动逻辑跑之前执行，读到的朝向是上一帧的，
-      // 玩家眼里就是"明明没朝我"却还能中弹——现在收紧角度，且转身逻辑已经挪到这前面先跑一遍
-      var facingX = -Math.sin(en.group.rotation.y), facingZ = -Math.cos(en.group.rotation.y);
-      var facingDot = facingX * toPlayer.x + facingZ * toPlayer.z;
-      if (facingDot < 0.5) continue;
-
-      enemyRay.set(eyePos, toPlayer);
-      var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
-      if (blocks.length && blocks[0].distance < dist - 0.5) continue; // 视线被掩体挡住
 
       // 开火动作：骨骼动画播一次射击抖动 + 枪口闪光 + 弹道
       en.attackAnimStart = now;
@@ -3447,9 +3563,15 @@
     remainingEnemies = ENEMY_COUNT;
     updateTargetInfo();
 
+    for (var ti = tombstones.length - 1; ti >= 0; ti--) scene.remove(tombstones[ti]); // 几何体/材质是共用的，不用 dispose
+    tombstones.length = 0;
+
     for (var hpi = 0; hpi < healthPacks.length; hpi++) {
-      healthPacks[hpi].active = true;
-      healthPacks[hpi].group.visible = true;
+      var pack = healthPacks[hpi];
+      pack.active = true;
+      pack.group.visible = true;
+      for (var pmi = 0; pmi < pack.meshes.length; pmi++) pack.meshes[pmi].visible = true;
+      pack.light.intensity = 1.3;
     }
 
     endScreen.classList.add("hidden");

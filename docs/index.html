@@ -1,3 +1,4 @@
+<meta charset="utf-8" />
 <title>刺激战争</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -6,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/MaskPass.js"></script>
@@ -302,7 +304,7 @@
     margin: 14px 0 8px;
   }
   .shop-weapon-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #skin-swatches {
+  #skin-swatches, #hero-skin-swatches {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
@@ -334,7 +336,7 @@
     box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
   }
   @media (max-width: 480px) {
-    .shop-weapon-cards, #skin-swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shop-weapon-cards, #skin-swatches, #hero-skin-swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   .hud-chip {
@@ -1015,6 +1017,15 @@
       <button class="skin-swatch" data-skin="stealth" style="--swatch-color:#1c1e24" type="button"><span>暗夜黑</span></button>
       <button class="skin-swatch" data-skin="cyber" style="--swatch-color:#b8263f" type="button"><span>赛博红</span></button>
     </div>
+    <div class="shop-section-label">英雄皮肤</div>
+    <div id="hero-skin-swatches">
+      <button class="skin-swatch" data-skin="ironman" style="--swatch-color:conic-gradient(#b8321f,#d4a017,#b8321f)" type="button"><span>钢铁侠</span></button>
+      <button class="skin-swatch" data-skin="ironman_mk7" style="--swatch-color:conic-gradient(#8c1a1a,#d4a017,#8c1a1a)" type="button"><span>钢铁侠 Mk7</span></button>
+      <button class="skin-swatch" data-skin="ironman_mk1" style="--swatch-color:conic-gradient(#7a2a1a,#c98a3a,#7a2a1a)" type="button"><span>钢铁侠玩具版</span></button>
+      <button class="skin-swatch" data-skin="spiderman" style="--swatch-color:conic-gradient(#8b1e2b,#1c3f8b,#8b1e2b)" type="button"><span>蜘蛛侠</span></button>
+      <button class="skin-swatch" data-skin="blackpanther" style="--swatch-color:#0b0b0f" type="button"><span>黑豹</span></button>
+      <button class="skin-swatch" data-skin="hulk" style="--swatch-color:conic-gradient(#3c6e3c,#2a3d6b,#3c6e3c)" type="button"><span>绿巨人</span></button>
+    </div>
   </div>
 </div>
 
@@ -1432,9 +1443,12 @@
   var playerMoving = false;
   var playerSpeedTier = "walk"; // 触屏摇杆轻推走路、推满或键盘按键跑步
   var playerJumping = false;
+  var mixamoCharRoot = null; // 原厂 Mixamo 骨骼人物根节点：套漫威皮肤时隐藏它，换回纯色皮肤时重新显示
+  var tpGunMesh = null; // 第三人称手上那把可见的枪：漫威皮肤没有对应手骨骼可挂，套上时直接隐藏这把枪
   (function buildPlayerBody() {
     if (CHAR) {
       var charRoot = THREE.SkeletonUtils.clone(CHAR.scene);
+      mixamoCharRoot = charRoot;
       charRoot.rotation.y = Math.PI; // 模型绑定姿势朝 +Z，转 180° 才能跟原有 group.rotation.y 朝向约定对齐
       var surfaceMesh = null;
       charRoot.traverse(function (o) {
@@ -1469,6 +1483,7 @@
         orientGunToHand(handBone, gun);
         tpMuzzleTip.position.set(0, 0, 0.25);
         gun.add(tpMuzzleTip);
+        tpGunMesh = gun;
       }
     } else {
       var uniformMat = new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.75 });
@@ -2213,6 +2228,45 @@
   addConcreteBarrier(5, -25, 0);
   addConcreteBarrier(-20, 30, Math.PI / 2);
   addConcreteBarrier(25, -15, Math.PI / 2);
+
+  /* ---------------- 街角商铺 / 公路桥 / 地形起伏 / 植被丛：素材库里跟人物皮肤同批的地图素材 ---------------- */
+  function addLandmarkBuilding(x, z, rotY, url, rawW, rawD, rawH) {
+    var isRot90 = Math.abs(Math.sin(rotY)) > 0.5;
+    var bw = isRot90 ? rawD : rawW, bd = isRot90 ? rawW : rawD;
+    var hitMesh = new THREE.Mesh(new THREE.BoxGeometry(bw, rawH, bd), new THREE.MeshBasicMaterial());
+    hitMesh.visible = false;
+    hitMesh.position.set(x, rawH / 2, z);
+    scene.add(hitMesh);
+    obstacles.push({ mesh: hitMesh, box: new THREE.Box3().setFromObject(hitMesh) });
+    walkableTops.push({ mesh: hitMesh, box: new THREE.Box3().setFromObject(hitMesh) });
+    var loader = new THREE.GLTFLoader();
+    if (window.MeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(url, function (gltf) {
+      var model = gltf.scene;
+      model.rotation.y = rotY;
+      model.position.set(x, 0, z);
+      model.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      scene.add(model);
+    });
+  }
+  // 纯装饰、不参与碰撞判定：公路桥/地形起伏/植被丛体量太不规则，做精确碰撞盒的收益远不如
+  // 直接当地表装饰划算——玩家实际还是走在原来那层平坦地面上，视觉上叠一层好看的模型
+  function addDecorModel(url, x, z, rotY, scale) {
+    var loader = new THREE.GLTFLoader();
+    if (window.MeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(url, function (gltf) {
+      var model = gltf.scene;
+      model.position.set(x, 0, z);
+      if (rotY) model.rotation.y = rotY;
+      if (scale) model.scale.setScalar(scale);
+      addDecor(model);
+    });
+  }
+  addLandmarkBuilding(90, -85, 0, "map_building.glb", 12.89, 13.9, 8.7); // 沿街商铺：东南角新地标，带完整实心碰撞
+  addDecorModel("map_road.glb", 45, 20, 0.2, 0.007); // 公路桥：连接蓝方大本营和红方据点方向的装饰路段
+  addDecorModel("map_terrain.glb", -95, 95, 0, 3); // 起伏地形+溪流小品，西北角安静角落
+  addDecorModel("map_trees.glb", 0, -95, 0, 1); // 低模树丛，南边地图边缘成片放置
+  addDecorModel("map_bushes.glb", -95, -60, 0, 1); // 扫描灌木丛，西边地图边缘
 
   /* ---------------- 空气中的浮尘粒子，增加废弃工业区的氛围 ---------------- */
   var dustGeometry = new THREE.BufferGeometry();
@@ -3250,16 +3304,74 @@
     cyber: { key: "cyber", name: "赛博红", color: 0xb8263f },
   };
   var currentSkin = SKINS.urban;
+
+  // 漫威英雄皮肤：跟纯色军服皮肤不是一回事——这些是刺激战争素材里的完整人物模型（黑豹/绿巨人/
+  // 钢铁侠三款/蜘蛛侠），没有一个是 Mixamo 骨骼，也不带任何内置动作，没法直接复用现有的动作状态机。
+  // 做法是套上皮肤时整个换成这个模型（隐藏原来的 Mixamo 身体和第三人称手上那把枪），
+  // 靠一个简单的上下起伏/左右摇摆来模拟"在动"，而不是真正的骨骼行走动画——
+  // scale/offset 是逐个模型用像素级测量量出来的（这些素材本身的导出比例、轴心五花八门）
+  var HERO_SKINS = {
+    blackpanther: { name: "黑豹", file: "skin_blackpanther.glb", scale: 0.007942, offset: [0, 0, 0], rotY: Math.PI },
+    hulk: { name: "绿巨人", file: "skin_hulk.glb", scale: 0.7855, offset: [0, 0, 0], rotY: Math.PI },
+    ironman: { name: "钢铁侠", file: "skin_ironman.glb", scale: 0.9192, offset: [0, 0, 0], rotY: Math.PI },
+    ironman_mk7: { name: "钢铁侠 Mk7", file: "skin_ironman_mk7.glb", scale: 97.07, offset: [0, 0, 0], rotY: Math.PI },
+    ironman_mk1: { name: "钢铁侠玩具版", file: "skin_ironman_mk1.glb", scale: 1.740, offset: [0.036, 0.011, 0.096], rotY: Math.PI },
+    spiderman: { name: "蜘蛛侠", file: "skin_spiderman.glb", scale: 1.307, offset: [0, 0, 0], rotY: Math.PI },
+  };
+  var heroModelCache = {};
+  var activeHeroKey = null;
+  var activeHeroModel = null;
+  var heroBobPhase = 0;
+
+  function loadHeroSkin(key, cb) {
+    if (heroModelCache[key]) { cb(heroModelCache[key]); return; }
+    var cfg = HERO_SKINS[key];
+    var loader = new THREE.GLTFLoader();
+    if (window.MeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(cfg.file, function (gltf) {
+      var root = gltf.scene;
+      root.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      heroModelCache[key] = root;
+      cb(root);
+    }, undefined, function (err) { console.warn("皮肤模型加载失败：" + cfg.file, err); });
+  }
+
+  function setHeroSkinActive(key) {
+    if (activeHeroKey === key) return;
+    if (activeHeroModel) { playerBody.remove(activeHeroModel); activeHeroModel = null; }
+    activeHeroKey = key;
+    if (mixamoCharRoot) mixamoCharRoot.visible = !key;
+    if (tpGunMesh) tpGunMesh.visible = !key;
+    if (!key) return;
+    loadHeroSkin(key, function (model) {
+      if (activeHeroKey !== key) return; // 模型加载完成前玩家又切换了别的皮肤，这份就不用了
+      var cfg = HERO_SKINS[key];
+      model.scale.setScalar(cfg.scale);
+      model.position.set(cfg.offset[0], cfg.offset[1], cfg.offset[2]);
+      model.rotation.y = cfg.rotY;
+      playerBody.add(model);
+      activeHeroModel = model;
+    });
+  }
+
   function applySkin(key) {
     var s = SKINS[key];
-    if (!s) return;
-    currentSkin = s;
-    if (playerSkinMaterial) playerSkinMaterial.color.set(s.color !== null ? s.color : playerSkinBaseColor);
-    // 第一人称主要看得到的是枪，不是自己身体，枪身材质也要一起着色，不然玩家会觉得"点了没反应"；
-    // 选"原厂本色"则各自恢复到加载时记下的原始颜色，而不是统一套用同一个色值
-    for (var g = 0; g < gunSkinMaterials.length; g++) {
-      var entry = gunSkinMaterials[g];
-      entry.mat.color.set(s.color !== null ? s.color : entry.baseColor);
+    if (s) {
+      setHeroSkinActive(null);
+      currentSkin = s;
+      if (playerSkinMaterial) playerSkinMaterial.color.set(s.color !== null ? s.color : playerSkinBaseColor);
+      // 第一人称主要看得到的是枪，不是自己身体，枪身材质也要一起着色，不然玩家会觉得"点了没反应"；
+      // 选"原厂本色"则各自恢复到加载时记下的原始颜色，而不是统一套用同一个色值
+      for (var g = 0; g < gunSkinMaterials.length; g++) {
+        var entry = gunSkinMaterials[g];
+        entry.mat.color.set(s.color !== null ? s.color : entry.baseColor);
+      }
+      return;
+    }
+    var h = HERO_SKINS[key];
+    if (h) {
+      currentSkin = { key: key, name: h.name, color: null };
+      setHeroSkinActive(key);
     }
   }
 
@@ -3731,8 +3843,20 @@
     }
   }
 
+  // 漫威皮肤模型没有骨骼动作，用一个简单的起伏+摇摆模拟"在走/在跑"，跟真正的骨骼动画状态机是两回事
+  function updateHeroSkinBob(dt) {
+    if (!activeHeroModel) return;
+    var cfg = HERO_SKINS[activeHeroKey];
+    var speed = !playerMoving ? 2 : (playerSpeedTier === "run" ? 9 : 6);
+    heroBobPhase += dt * speed;
+    var amp = !playerMoving ? 0.012 : 0.045;
+    activeHeroModel.position.y = cfg.offset[1] + Math.sin(heroBobPhase) * amp;
+    activeHeroModel.rotation.z = playerMoving ? Math.sin(heroBobPhase * 0.5) * 0.05 : 0;
+  }
+
   function updateCharacterAnimations(dt) {
     updatePlayerAnimState();
+    updateHeroSkinBob(dt);
     if (playerMixer) playerMixer.update(dt);
     if (!gameActive) return;
     var now = performance.now();

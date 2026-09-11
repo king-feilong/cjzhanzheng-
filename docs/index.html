@@ -852,6 +852,30 @@
   }
   #jump-btn svg { width: 58%; height: 58%; overflow: visible; }
   #jump-btn:active { background: rgba(0, 229, 255, 0.35); border-color: #4df3ff; }
+
+  /* 坦克上/下车提示：走近才出现，桌面/移动端通用，不放进只有触屏才显示的 #touch-layer */
+  #tank-enter-btn, #tank-exit-btn {
+    position: absolute;
+    left: 50%;
+    bottom: 140px;
+    transform: translateX(-50%);
+    padding: 11px 24px;
+    border-radius: 999px;
+    background: rgba(20, 18, 14, 0.85);
+    border: 2px solid var(--accent);
+    color: var(--ink);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 33;
+  }
+  #tank-enter-btn.show, #tank-exit-btn.show { opacity: 1; pointer-events: auto; }
+  #tank-enter-btn:active, #tank-exit-btn:active { background: rgba(0, 229, 255, 0.3); }
+  #tank-exit-btn { bottom: 84px; }
 </style>
 
 <div id="stage"></div>
@@ -1052,6 +1076,10 @@
     </svg>
   </button>
 </div>
+
+<!-- 坦克上/下车提示按钮：不放进 #touch-layer，桌面端和移动端都要能看到、能点 -->
+<button id="tank-enter-btn" type="button">🚙 驾驶（E）</button>
+<button id="tank-exit-btn" type="button">下车（E）</button>
 
 <script>
 (function () {
@@ -1432,6 +1460,7 @@
   var bodyYaw = 0, bodyYawInited = false;
 
   function toggleViewMode() {
+    if (drivingTank) return; // 开坦克时视角/枪械视图都是坦克专用状态，不接受一/三人称切换
     viewMode = viewMode === "fp" ? "tp" : "fp";
     if (viewMode === "tp") setScoped(false); // 倍镜只在第一人称下有意义，切到第三人称就自动收起
     playerBody.visible = viewMode === "tp";
@@ -1931,8 +1960,10 @@
   addContainer(-30, 90, 0, containerTexB);
   addContainer(40, 30, Math.PI / 2, containerTexA);
 
-  /* ---------------- 废弃坦克：纯地图装饰，碰撞盒用一个跟模型贴合的隐形箱体，
+  /* ---------------- 坦克：可驾驶载具，碰撞盒用一个跟模型贴合的隐形箱体，
      不用等真正的坦克模型异步加载完才能生效，也不用让子弹/AI 视线去对一整个高面数载具网格做射线检测 ---------------- */
+  var drivableTanks = []; // 走近能看到"驾驶"按钮的坦克列表
+  var TANK_EYE_H = 3.3; // 驾驶时的视角高度，比站在地上高一截，像坐在炮塔里
   function addWarTank(x, z, rotY, url) {
     var scale = 0.55;
     var rawW = 10.1, rawD = 17.7, rawH = 4.7; // 模型原始（缩放前）大致外接尺寸，量出来的
@@ -1942,7 +1973,9 @@
     hitMesh.visible = false;
     hitMesh.position.set(x, bh / 2, z);
     scene.add(hitMesh);
-    obstacles.push({ mesh: hitMesh, box: new THREE.Box3().setFromObject(hitMesh) });
+    var obstacleEntry = { mesh: hitMesh, box: new THREE.Box3().setFromObject(hitMesh) };
+    obstacles.push(obstacleEntry);
+    drivableTanks.push({ x: x, z: z, rotY: rotY, hitMesh: hitMesh, obstacleEntry: obstacleEntry, bh: bh, model: null });
 
     var tankLoader = new THREE.GLTFLoader();
     tankLoader.load(url, function (gltf) {
@@ -1952,6 +1985,9 @@
       model.position.set(x, 0.05, z);
       model.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       scene.add(model);
+      for (var ti = 0; ti < drivableTanks.length; ti++) {
+        if (drivableTanks[ti].hitMesh === hitMesh) { drivableTanks[ti].model = model; break; }
+      }
     });
   }
   // 军用载具属于东南据点的核心装饰，放两辆在营房/指挥部周围
@@ -2397,6 +2433,14 @@
     }
     return { x: rr(-HALF + 10, HALF - 10), z: rr(-HALF + 10, HALF - 10) };
   }
+  // 队友刷在玩家出生点（0,10）附近的安全区里，而不是像敌人那样撒得满地图都是
+  function findTeammateSpot() {
+    for (var a = 0; a < 40; a++) {
+      var x = rr(-6, 6), z = 10 + rr(-6, 6);
+      if (isClear(x, z, 0.6)) return { x: x, z: z };
+    }
+    return { x: rr(-4, 4), z: 10 + rr(-4, 4) };
+  }
 
   // 挂在骨骼上的隐形命中判定盒：每帧从骨骼世界坐标同步位置，这样跑动动画时头/躯干/四肢
   // 的判定范围会跟着动作走，同时不需要对蒙皮网格本身做骨骼姿态下的射线检测
@@ -2409,7 +2453,16 @@
     { bone: "mixamorigRightUpLeg", tag: "limb", size: [0.17, 0.85, 0.17], offsetY: -0.38 },
   ];
 
-  function createEnemy() {
+  // 两个阵营的配色：红方沿用原来的红棕军服 + 品红识别灯（跟原有的弹道/枪口火光同色），
+  // 蓝方是玩家自己这边——用玩家一直以来的都市蓝军服色 + 青色识别灯，跟玩家自己开火的青色弹道呼应
+  var TEAM_COLORS = {
+    red: { uniform: 0x8a3226, iff: 0xff2f6d },
+    blue: { uniform: 0x2d4a66, iff: 0x5ff2ff },
+  };
+
+  function createEnemy(team) {
+    team = team || "red";
+    var tc = TEAM_COLORS[team];
     var group = new THREE.Group();
     var parts = [];
     var rightArm = null, gun = null, mixer = null, charMaterial = null, animState = null;
@@ -2424,8 +2477,8 @@
         if (o.name === "Beta_Surface") surfaceMesh = o;
       });
       if (surfaceMesh) {
-        // 军服颜色做小幅随机偏移，避免 14 个敌人长得一模一样
-        var uniformColor = new THREE.Color(0x8a3226);
+        // 军服颜色做小幅随机偏移，避免同阵营的人长得一模一样
+        var uniformColor = new THREE.Color(tc.uniform);
         uniformColor.offsetHSL(rr(-0.03, 0.03), rr(-0.1, 0.1), rr(-0.08, 0.08));
         charMaterial = surfaceMesh.material.clone();
         charMaterial.color.copy(uniformColor);
@@ -2471,7 +2524,7 @@
       }
     } else {
       // 模型加载失败时的后备方案：程序化箱体人形
-      var uniformColor2 = new THREE.Color(0x3c4131);
+      var uniformColor2 = new THREE.Color(tc.uniform);
       uniformColor2.offsetHSL(rr(-0.03, 0.03), rr(-0.1, 0.1), rr(-0.06, 0.06));
       var skinColor = new THREE.Color([0xb98a63, 0x8a6244, 0xd9a876][(Math.random() * 3) | 0]);
       var accentColor = 0xc23b2a;
@@ -2510,26 +2563,27 @@
       rightArm.rotation.x = -0.15; // 平时端枪的姿态，不再完全站直木然
     }
 
-    // 敌方识别灯：头顶一颗常亮的品红色小灯（配一点点光），跟 Bloom 配合，
-    // 不管天气/光照多暗，敌人的轮廓可能糊在暗背景里，这颗灯始终是清晰的亮点——
-    // 军用 HUD 敌我识别灯（IFF）的思路，直接解决"看不清敌人在哪"的问题
+    // 敌我识别灯（IFF）：头顶一颗常亮的小灯（配一点点光），跟 Bloom 配合，
+    // 不管天气/光照多暗，人物轮廓可能糊在背景里，这颗灯始终是清晰的亮点——
+    // 颜色按阵营区分：红方品红、蓝方青色，一眼就能分清敌我
     var iffBulb = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x1a0510, emissive: 0xff2f6d, emissiveIntensity: 2.2 })
+      new THREE.MeshStandardMaterial({ color: 0x1a0510, emissive: tc.iff, emissiveIntensity: 2.2 })
     );
     iffBulb.position.set(0, 1.9, 0);
     group.add(iffBulb);
-    var iffLight = new THREE.PointLight(0xff2f6d, 0.6, 5);
+    var iffLight = new THREE.PointLight(tc.iff, 0.6, 5);
     iffLight.position.copy(iffBulb.position);
     group.add(iffLight);
 
-    var pos = findEnemySpot();
+    var pos = team === "blue" ? findTeammateSpot() : findEnemySpot();
     group.position.set(pos.x, 0, pos.z);
     group.rotation.y = rr(0, Math.PI * 2);
     scene.add(group);
 
     return {
       group: group,
+      team: team,
       parts: parts,
       rightArm: rightArm,
       gun: gun,
@@ -2539,6 +2593,7 @@
       charMaterial: charMaterial,
       hp: ENEMY_MAX_HP,
       alive: true,
+      target: null, // 当前瞄着的目标：'player' 或某个队友/敌人对象引用
       nextFireTime: performance.now() + rr(500, 2500),
       homeX: pos.x,
       homeZ: pos.z,
@@ -2548,11 +2603,16 @@
       aggro: false,
       aggroUntil: 0,
       nextAggroRetarget: 0,
-      visibleSince: null, // 持续"看到"玩家的起始时间戳；断线就清空，重新累计
+      visibleSince: null, // 持续"看到"目标的起始时间戳；断线就清空，重新累计
       nextSightCheck: 0,
     };
   }
-  for (var e = 0; e < ENEMY_COUNT; e++) enemies.push(createEnemy());
+  for (var e = 0; e < ENEMY_COUNT; e++) enemies.push(createEnemy("red"));
+
+  // ---------------- 蓝方队友：跟玩家同阵营的 AI 友军 ----------------
+  var TEAMMATE_COUNT = 3;
+  var teammates = [];
+  for (var tmi = 0; tmi < TEAMMATE_COUNT; tmi++) teammates.push(createEnemy("blue"));
 
   function allEnemyPartMeshes() {
     var list = [];
@@ -2663,7 +2723,9 @@
     }
   }
 
-  function damageEnemy(enemy, tag, hitPoint) {
+  // attacker：谁打的这一枪，默认是玩家；队友开火命中敌人时会传自己的队友引用进来，
+  // 这样敌人挨打后除了原地警戒，还会转头去反击真正打中自己的那个目标（玩家或队友）
+  function damageEnemy(enemy, tag, hitPoint, attacker) {
     var dmg = DAMAGE[tag] || DAMAGE.limb;
     enemy.hp -= dmg;
     playHit();
@@ -2676,9 +2738,10 @@
     if (enemy.hp <= 0) {
       killEnemy(enemy);
     } else {
-      // 挨打之后进入警戒状态：放弃随机巡逻，转为主动朝玩家逼近
+      // 挨打之后进入警戒状态：放弃随机巡逻，转为主动反击打中自己的目标
       enemy.aggro = true;
       enemy.aggroUntil = performance.now() + rr(5000, 8000);
+      enemy.target = attacker || "player";
       enemy.moveTarget = null;
       enemy.nextMoveTime = 0;
     }
@@ -2734,6 +2797,63 @@
       return;
     }
     updateHpUI();
+  }
+
+  // 队友死亡：跟 killEnemy 走同样的倒地/沉入地面/留墓碑流程，但不计分、不影响歼灭进度——
+  // 队友只是助战，不是通关目标
+  function killTeammate(tm) {
+    tm.alive = false;
+    if (tm.animState && tm.animState.actions.dying) {
+      playAction(tm.animState, "dying", { once: true, fade: 0.1 });
+    }
+    var startY = tm.group.position.y;
+    var hasDeathAnim = !!(tm.animState && tm.animState.actions.dying);
+    effects.push({
+      obj: tm.group,
+      start: performance.now(),
+      duration: hasDeathAnim ? 1900 : 420,
+      update: function (t) {
+        if (hasDeathAnim) {
+          if (t > 0.8) {
+            var k = (t - 0.8) / 0.2;
+            tm.group.position.y = startY - k * 1.3;
+          }
+        } else {
+          tm.group.position.y = startY - t * 1.6;
+          tm.group.rotation.x = t * 1.1;
+          tm.group.scale.setScalar(1 - t * 0.25);
+        }
+      },
+      dispose: function () {
+        tm.mixerDone = true;
+        spawnTombstone(tm.group.position.x, tm.group.position.z);
+        for (var i = 0; i < tm.parts.length; i++) {
+          tm.parts[i].mesh.geometry.dispose();
+          tm.parts[i].mesh.material.dispose();
+        }
+        if (tm.gun) {
+          tm.gun.geometry.dispose();
+          tm.gun.material.dispose();
+        }
+        if (tm.charMaterial) tm.charMaterial.dispose();
+      },
+    });
+  }
+
+  function damageTeammate(tm, amount, hitPoint, attacker) {
+    if (!gameActive || !tm.alive) return;
+    tm.hp -= amount;
+    playHit();
+    if (hitPoint) spawnHitSpark(hitPoint);
+    if (tm.hp <= 0) {
+      killTeammate(tm);
+    } else {
+      // 挨打后立刻转去反击打中自己的敌人，不用等下一次视野判定才发现对方
+      tm.aggro = true;
+      tm.aggroUntil = performance.now() + rr(5000, 8000);
+      tm.target = attacker || null;
+      tm.moveTarget = null;
+    }
   }
 
   /* ---------------- Web Audio 合成音效 ---------------- */
@@ -2958,7 +3078,7 @@
 
   var reloadStartTime = 0; // 第一人称换弹动作（枪身下压+回摆）按这个时间戳算播放进度，跟骨骼装弹动作分开、互不影响
   function startReload() {
-    if (isReloading || currentAmmo === MAG_SIZE || !gameActive) return;
+    if (isReloading || currentAmmo === MAG_SIZE || !gameActive || drivingTank) return;
     isReloading = true;
     reloadStartTime = performance.now();
     updateAmmoUI();
@@ -3015,7 +3135,7 @@
   }
 
   function shoot() {
-    if (!gameActive || isReloading) return;
+    if (!gameActive || isReloading || drivingTank) return;
     var now = performance.now();
     if (now - lastFire < FIRE_CD) return;
     if (currentAmmo <= 0) { startReload(); return; }
@@ -3087,50 +3207,76 @@
       dispose: function () { mat.dispose(); },
     });
   }
-  // 敌人得持续"看到"玩家超过这个时长才算真被发现——只做单次几何判定的话，敌人哪怕只是
-  // 巡逻转身时凑巧扫过玩家方向那一瞬间也会立刻开火，玩家看到的就是"明明没看见我却还是中弹"
+  // 敌人得持续"看到"目标超过这个时长才算真被发现——只做单次几何判定的话，哪怕只是
+  // 巡逻转身时凑巧扫过对方方向那一瞬间也会立刻开火，看到的就是"明明没看见我却还是中弹"
   var SPOT_DELAY = 350;
-  // 视线判定（射线检测）比较费，不需要每帧都对所有敌人做；按这个间隔抽样，
+  // 视线判定（射线检测）比较费，不需要每帧都对所有单位做；按这个间隔抽样，
   // 既能在 SPOT_DELAY 窗口内多次采样保证不是巧合，又不会把射线检测的开销叠加到每一帧
   var SIGHT_CHECK_INTERVAL = 130;
+
+  // target 统一约定：字符串 "player" 代表玩家本人，其余情况是某个 enemy/teammate 对象引用
+  function targetPosOf(target) {
+    return target === "player" ? camera.position : target.group.position;
+  }
+  function targetIsValid(target) {
+    return target === "player" ? gameActive : !!(target && target.alive);
+  }
+  // 敌我共用的"能不能看到某个候选目标"扫描：候选给一组 {pos, ref}，返回视野锥 + 距离 + 无遮挡
+  // 判定下最近的一个可见目标（没有就返回 null）。敌人拿玩家+队友当候选，队友拿敌人当候选，
+  // 逻辑完全一样，写一份就够了
+  function scanForTarget(fromGroup, obstacleMeshes, candidates) {
+    var eyePos = fromGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+    var best = null, bestDist = ENEMY_RANGE;
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      var toC = c.pos.clone().sub(eyePos);
+      var dist = toC.length();
+      if (dist > bestDist) continue;
+      toC.normalize();
+      // 视野盲区：目标得在朝向前方大致 120° 的锥形范围内才可能被看到
+      var facingX = -Math.sin(fromGroup.rotation.y), facingZ = -Math.cos(fromGroup.rotation.y);
+      var facingDot = facingX * toC.x + facingZ * toC.z;
+      if (facingDot < 0.5) continue;
+      enemyRay.set(eyePos, toC);
+      var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
+      if (blocks.length && blocks[0].distance < dist - 0.5) continue; // 视线被掩体挡住
+      best = c.ref;
+      bestDist = dist;
+    }
+    return best;
+  }
+
   function updateEnemyAI() {
     if (!gameActive) return;
     var now = performance.now();
     var obstacleMeshes = obstacles.map(function (o) { return o.mesh; });
+    // 敌人的候选目标是玩家本人 + 所有还活着的蓝方队友，取视野内最近的一个
+    var blueCandidates = [{ pos: camera.position, ref: "player" }];
+    for (var bi = 0; bi < teammates.length; bi++) {
+      if (teammates[bi].alive) blueCandidates.push({ pos: teammates[bi].group.position, ref: teammates[bi] });
+    }
     for (var i = 0; i < enemies.length; i++) {
       var en = enemies[i];
       if (!en.alive) continue;
 
       if (now >= en.nextSightCheck) {
         en.nextSightCheck = now + SIGHT_CHECK_INTERVAL;
-        var eyePos = en.group.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-        var toPlayer = camera.position.clone().sub(eyePos);
-        var dist = toPlayer.length();
-        var canSee = false;
-        if (dist <= ENEMY_RANGE) {
-          toPlayer.normalize();
-          // 视野盲区：玩家得在敌人朝向前方大致 120° 的锥形范围内才可能被看到
-          var facingX = -Math.sin(en.group.rotation.y), facingZ = -Math.cos(en.group.rotation.y);
-          var facingDot = facingX * toPlayer.x + facingZ * toPlayer.z;
-          if (facingDot >= 0.5) {
-            enemyRay.set(eyePos, toPlayer);
-            var blocks = enemyRay.intersectObjects(obstacleMeshes, false);
-            if (!blocks.length || blocks[0].distance >= dist - 0.5) canSee = true; // 没被掩体挡住视线
-          }
-        }
-        if (canSee) {
+        var found = scanForTarget(en.group, obstacleMeshes, blueCandidates);
+        if (found) {
           if (en.visibleSince === null) en.visibleSince = now;
           // 真被看到才进入警戒追击——之前只有挨打才会 aggro，没被发现时敌人只是按巡逻节奏乱开火
           en.aggro = true;
           en.aggroUntil = now + rr(5000, 8000);
+          en.target = found;
         } else {
           en.visibleSince = null;
         }
       }
 
-      // 没有持续可见足够时长，或者还在开火冷却里，都不允许开枪
+      // 没有持续可见足够时长，或者还在开火冷却里，或者目标已经失效（比如刚好被打死），都不允许开枪
       if (en.visibleSince === null || now - en.visibleSince < SPOT_DELAY) continue;
       if (now < en.nextFireTime) continue;
+      if (!targetIsValid(en.target)) continue;
       en.nextFireTime = now + rr(1500, 3200);
 
       // 开火动作：骨骼动画播一次射击抖动 + 枪口闪光 + 弹道
@@ -3140,10 +3286,11 @@
       var gunWorldPos = new THREE.Vector3();
       en.gun.getWorldPosition(gunWorldPos);
       spawnMuzzleFlashAt(gunWorldPos, 0xff2f6d);
-      spawnTracer(gunWorldPos, camera.position.clone(), 0xff2f6d);
+      spawnTracer(gunWorldPos, targetPosOf(en.target).clone(), 0xff2f6d);
       playEnemyShot();
       if (Math.random() < ENEMY_HIT_CHANCE) {
-        damagePlayer(rr(6, 16), en.group.position);
+        if (en.target === "player") damagePlayer(rr(6, 16), en.group.position);
+        else damageTeammate(en.target, rr(6, 16), en.target.group.position.clone().add(new THREE.Vector3(0, 1.2, 0)), en);
       }
     }
   }
@@ -3181,29 +3328,31 @@
       }
 
       if (en.aggro) {
-        // 警戒状态：放弃巡逻点位，定期朝玩家当前位置重新取目标，但保持一定接战距离，不贴脸
+        // 警戒状态：放弃巡逻点位，定期朝当前目标（玩家或某个队友）重新取目标点，但保持一定接战距离，不贴脸；
+        // 目标万一已经失效（比如刚好被打死），先兜底退回玩家位置，下次视野判定会重新挑一个有效目标
+        var chasePos = targetIsValid(en.target) ? targetPosOf(en.target) : camera.position;
         if (now > en.nextAggroRetarget) {
           en.nextAggroRetarget = now + rr(500, 900);
-          var toPlayerX = camera.position.x - en.group.position.x;
-          var toPlayerZ = camera.position.z - en.group.position.z;
-          var distToPlayer = Math.hypot(toPlayerX, toPlayerZ);
-          if (distToPlayer > ENEMY_ENGAGE_DIST) {
-            var ux = toPlayerX / distToPlayer, uz = toPlayerZ / distToPlayer;
+          var toTargetX = chasePos.x - en.group.position.x;
+          var toTargetZ = chasePos.z - en.group.position.z;
+          var distToTarget = Math.hypot(toTargetX, toTargetZ);
+          if (distToTarget > ENEMY_ENGAGE_DIST) {
+            var ux = toTargetX / distToTarget, uz = toTargetZ / distToTarget;
             // 目标点不用预先校验是否 isClear：逐步移动时每一步都会做碰撞检测，
             // 真撞上掩体会自然停下，不会穿模；提前校验反而会让目标点恰好落在障碍物里时敌人卡住不动
             en.moveTarget = {
-              x: camera.position.x - ux * ENEMY_ENGAGE_DIST,
-              z: camera.position.z - uz * ENEMY_ENGAGE_DIST,
+              x: chasePos.x - ux * ENEMY_ENGAGE_DIST,
+              z: chasePos.z - uz * ENEMY_ENGAGE_DIST,
             };
           } else {
             en.moveTarget = null; // 已经够近了，原地交火
           }
         }
         if (!en.moveTarget) {
-          // 原地交火时移动那条"边走边转朝向"的逻辑不会跑，得单独让它转身正对玩家——
+          // 原地交火时移动那条"边走边转朝向"的逻辑不会跑，得单独让它转身正对目标——
           // 不然敌人可能保持着巡逻时最后一次走动的朝向开枪，看起来像"背对着也能打中"
-          var faceX = camera.position.x - en.group.position.x;
-          var faceZ = camera.position.z - en.group.position.z;
+          var faceX = chasePos.x - en.group.position.x;
+          var faceZ = chasePos.z - en.group.position.z;
           en.group.rotation.y = Math.atan2(-faceX, -faceZ);
         }
       } else if (!en.moveTarget && now > en.nextMoveTime) {
@@ -3235,6 +3384,142 @@
             en.group.rotation.y = Math.atan2(-dx, -dz);
           } else {
             en.moveTarget = null; // 撞到障碍就放弃这次目标，下次重新挑
+          }
+        }
+      }
+    }
+  }
+
+  /* ---------------- 蓝方队友 AI：不巡逻，平时跟着玩家走，发现敌人就主动交火 ---------------- */
+  var TEAMMATE_LEASH = 9; // 离玩家超过这个距离就往回靠拢
+  var TEAMMATE_FOLLOW_SPEED = 2.4;
+  var TEAMMATE_AGGRO_SPEED = 2.8;
+  var TEAMMATE_ENGAGE_DIST = 8;
+  function updateTeammateAI() {
+    if (!gameActive) return;
+    var now = performance.now();
+    var obstacleMeshes = obstacles.map(function (o) { return o.mesh; });
+    // 队友的候选目标是所有还活着的敌人，取视野内最近的一个——跟敌人那边完全对称的逻辑
+    var redCandidates = [];
+    for (var ei = 0; ei < enemies.length; ei++) {
+      if (enemies[ei].alive) redCandidates.push({ pos: enemies[ei].group.position, ref: enemies[ei] });
+    }
+    for (var i = 0; i < teammates.length; i++) {
+      var tm = teammates[i];
+      if (!tm.alive) continue;
+
+      if (now >= tm.nextSightCheck) {
+        tm.nextSightCheck = now + SIGHT_CHECK_INTERVAL;
+        var found = scanForTarget(tm.group, obstacleMeshes, redCandidates);
+        if (found) {
+          if (tm.visibleSince === null) tm.visibleSince = now;
+          tm.aggro = true;
+          tm.aggroUntil = now + rr(5000, 8000);
+          tm.target = found;
+        } else {
+          tm.visibleSince = null;
+        }
+      }
+
+      if (tm.visibleSince === null || now - tm.visibleSince < SPOT_DELAY) continue;
+      if (now < tm.nextFireTime) continue;
+      if (!targetIsValid(tm.target)) continue;
+      tm.nextFireTime = now + rr(1200, 2600); // 队友火力节奏比敌人略快一点，分担火力才有意义
+
+      tm.attackAnimStart = now;
+      triggerFireAnim(tm.animState);
+      tm.group.updateMatrixWorld(true);
+      var gunWorldPos = new THREE.Vector3();
+      tm.gun.getWorldPosition(gunWorldPos);
+      var hitPoint = tm.target.group.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+      spawnMuzzleFlashAt(gunWorldPos, 0x5ff2ff);
+      spawnTracer(gunWorldPos, hitPoint, 0x5ff2ff);
+      playEnemyShot();
+      if (Math.random() < ENEMY_HIT_CHANCE) {
+        damageEnemy(tm.target, "torso", hitPoint, tm);
+      }
+    }
+  }
+
+  function updateTeammateMovement(dt) {
+    if (!gameActive) return;
+    var now = performance.now();
+    for (var i = 0; i < teammates.length; i++) {
+      var tm = teammates[i];
+      if (!tm.alive) continue;
+
+      if (tm.rightArm && tm.attackAnimStart !== null) {
+        var at = (now - tm.attackAnimStart) / 220;
+        if (at >= 1) {
+          tm.rightArm.rotation.x = -0.15;
+          tm.attackAnimStart = null;
+        } else {
+          var k = at < 0.4 ? at / 0.4 : 1 - (at - 0.4) / 0.6;
+          tm.rightArm.rotation.x = -0.15 - k * 0.38;
+        }
+      }
+
+      if (tm.aggro && now > tm.aggroUntil) {
+        tm.aggro = false;
+        tm.moveTarget = null;
+        tm.target = null;
+      }
+
+      if (tm.aggro && targetIsValid(tm.target)) {
+        var tpos = targetPosOf(tm.target);
+        if (now > tm.nextAggroRetarget) {
+          tm.nextAggroRetarget = now + rr(500, 900);
+          var toEnemyX = tpos.x - tm.group.position.x;
+          var toEnemyZ = tpos.z - tm.group.position.z;
+          var distToEnemy = Math.hypot(toEnemyX, toEnemyZ);
+          if (distToEnemy > TEAMMATE_ENGAGE_DIST) {
+            var ux = toEnemyX / distToEnemy, uz = toEnemyZ / distToEnemy;
+            tm.moveTarget = { x: tpos.x - ux * TEAMMATE_ENGAGE_DIST, z: tpos.z - uz * TEAMMATE_ENGAGE_DIST };
+          } else {
+            tm.moveTarget = null;
+          }
+        }
+        if (!tm.moveTarget) {
+          var faceX = tpos.x - tm.group.position.x;
+          var faceZ = tpos.z - tm.group.position.z;
+          tm.group.rotation.y = Math.atan2(-faceX, -faceZ);
+        }
+      } else if (!tm.moveTarget && now > tm.nextMoveTime) {
+        // 不交战时的日常行为：离玩家太远就往玩家附近靠拢，已经跟得够近就在原地小范围游荡
+        var distToPlayer = Math.hypot(camera.position.x - tm.group.position.x, camera.position.z - tm.group.position.z);
+        var tx, tz, found = false;
+        if (distToPlayer > TEAMMATE_LEASH) {
+          tx = camera.position.x + rr(-3, 3);
+          tz = camera.position.z + rr(-3, 3);
+          found = isClear(tx, tz, 0.6);
+        } else {
+          for (var tr = 0; tr < 6; tr++) {
+            tx = tm.group.position.x + rr(-4, 4);
+            tz = tm.group.position.z + rr(-4, 4);
+            if (isClear(tx, tz, 0.6)) { found = true; break; }
+          }
+        }
+        if (found) tm.moveTarget = { x: tx, z: tz };
+        tm.nextMoveTime = now + rr(1500, 3200);
+      }
+
+      if (tm.moveTarget) {
+        var moveSpeed = tm.aggro ? TEAMMATE_AGGRO_SPEED : TEAMMATE_FOLLOW_SPEED;
+        var dx = tm.moveTarget.x - tm.group.position.x;
+        var dz = tm.moveTarget.z - tm.group.position.z;
+        var d = Math.hypot(dx, dz);
+        if (d < 0.3) {
+          tm.moveTarget = null;
+        } else {
+          var step = Math.min(moveSpeed * dt, d);
+          var nx = tm.group.position.x + (dx / d) * step;
+          var nz = tm.group.position.z + (dz / d) * step;
+          if (isClear(nx, nz, 0.5)) {
+            tm.group.position.x = nx;
+            tm.group.position.z = nz;
+            tm.group.rotation.y = Math.atan2(-dx, -dz);
+          } else {
+            tm.moveTarget = null;
           }
         }
       }
@@ -3329,6 +3614,17 @@
         syncEnemyHitboxes(en);
       } else {
         en.mixer.update(dt); // 已死亡但死亡动画/下沉特效还没播完，继续推进骨骼动画
+      }
+    }
+    for (var j = 0; j < teammates.length; j++) {
+      var tm = teammates[j];
+      if (!tm.mixer || tm.mixerDone) continue;
+      if (tm.alive) {
+        updateEnemyAnimState(tm, now);
+        tm.mixer.update(dt);
+        syncEnemyHitboxes(tm);
+      } else {
+        tm.mixer.update(dt);
       }
     }
   }
@@ -3503,6 +3799,7 @@
     if (ev.code === "KeyR") startReload();
     if (ev.code === "KeyV") toggleViewMode();
     if (ev.code === "Space") { tryJump(); ev.preventDefault(); }
+    if (ev.code === "KeyE") { if (drivingTank) exitTank(); else if (tankNearby) enterTank(tankNearby); }
   });
   window.addEventListener("keyup", function (ev) { keys[ev.code] = false; });
   var keys = {};
@@ -3515,6 +3812,9 @@
     hud.classList.remove("visible");
     hpBarWrapEl.classList.remove("visible");
     touchLayer.classList.add("hidden");
+    drivingTank = null; // 结算画面盖住全屏了，驾驶状态直接清掉就行，不用再费劲把人挪出坦克
+    tankEnterBtn.classList.remove("show");
+    tankExitBtn.classList.remove("show");
 
     if (won) {
       endScreen.classList.remove("lose");
@@ -3544,6 +3844,10 @@
     updateAmmoUI();
     feetY = 0; jumpVelocity = 0; isGrounded = true; playerJumping = false;
     camera.position.set(0, EYE_H, 10);
+    // 万一是开着坦克阵亡的，endGame 只清了 drivingTank 状态，没来得及把枪/身体模型的可见性
+    // 切回来（走的是 exitTank 那条路径）——这里按当前视角模式重新同步一次，避免重开一局后第一人称看不到枪
+    gunView.visible = viewMode === "fp" && !isScoped;
+    playerBody.visible = viewMode === "tp";
 
     for (var i = enemies.length - 1; i >= 0; i--) {
       var en = enemies[i];
@@ -3559,9 +3863,25 @@
       if (en.charMaterial) en.charMaterial.dispose();
     }
     enemies.length = 0;
-    for (var k = 0; k < ENEMY_COUNT; k++) enemies.push(createEnemy());
+    for (var k = 0; k < ENEMY_COUNT; k++) enemies.push(createEnemy("red"));
     remainingEnemies = ENEMY_COUNT;
     updateTargetInfo();
+
+    for (var mi = teammates.length - 1; mi >= 0; mi--) {
+      var tm = teammates[mi];
+      scene.remove(tm.group);
+      for (var mj = 0; mj < tm.parts.length; mj++) {
+        tm.parts[mj].mesh.geometry.dispose();
+        tm.parts[mj].mesh.material.dispose();
+      }
+      if (tm.gun) {
+        tm.gun.geometry.dispose();
+        tm.gun.material.dispose();
+      }
+      if (tm.charMaterial) tm.charMaterial.dispose();
+    }
+    teammates.length = 0;
+    for (var mk = 0; mk < TEAMMATE_COUNT; mk++) teammates.push(createEnemy("blue"));
 
     for (var ti = tombstones.length - 1; ti >= 0; ti--) scene.remove(tombstones[ti]); // 几何体/材质是共用的，不用 dispose
     tombstones.length = 0;
@@ -3720,12 +4040,20 @@
   var jumpBtn = document.getElementById("jump-btn");
   jumpBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); tryJump(); }, { passive: false });
 
+  /* ---------------- 坦克上/下车按钮：桌面点击、移动端点按都要能用（这俩按钮不在只有触屏才显示的 touch-layer 里） ---------------- */
+  tankEnterBtn = document.getElementById("tank-enter-btn");
+  tankExitBtn = document.getElementById("tank-exit-btn");
+  tankEnterBtn.addEventListener("click", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); });
+  tankEnterBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); }, { passive: false });
+  tankExitBtn.addEventListener("click", function (ev) { ev.preventDefault(); exitTank(); });
+  tankExitBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); exitTank(); }, { passive: false });
+
   /* ---------------- 倍镜瞄准：桌面端按住鼠标右键，移动端按住镜头按钮 ---------------- */
   var isScoped = false;
   var scopeOverlayEl = document.getElementById("scope-overlay");
   function setScoped(v) {
     if (v === isScoped) return;
-    if (v && viewMode !== "fp") return; // 只在第一人称下能开镜，第三人称没有意义
+    if (v && (viewMode !== "fp" || drivingTank)) return; // 只在第一人称下能开镜，第三人称/开坦克时没有意义
     isScoped = v;
     scopeOverlayEl.classList.toggle("show", isScoped);
     reticle.classList.toggle("hidden-by-scope", isScoped);
@@ -3750,12 +4078,93 @@
   var BASE_FOV = 75, RUN_FOV = 78, SCOPE_FOV = 22;
   var BOB_FREQ = 7.5, BOB_AMP = 0.035, FOOTSTEP_INTERVAL = 0.36;
 
+  /* ---------------- 坦克驾驶：走近会出现"驾驶"按钮，上车后 WASD 开坦克，转视角同时也是打方向盘 ---------------- */
+  var drivingTank = null; // 当前正在驾驶的坦克对象（drivableTanks 里的一项），没驾驶时是 null
+  var TANK_ENTER_RADIUS = 4.5;
+  var TANK_SPEED = 9, TANK_RADIUS = 2.3;
+  var tankNearby = null; // 当前离得够近、可以按按钮上车的那辆坦克
+  // DOM 引用在下面触控/按钮那段统一获取后回填到这两个变量上；这里只声明不赋值——
+  // 那段按钮事件绑定代码在源码顺序上在这段之前就执行了，要是这里写 "= null" 会按执行顺序
+  // 把已经绑定好的 DOM 引用覆盖回 null（var 声明会提升，但赋值不会，两处顺序错了会互相打架）
+  var tankEnterBtn, tankExitBtn;
+
+  // 坦克自己移动时的碰撞检测要跳过它自身那个障碍物条目，不然车身正好压在自己的碰撞盒上，一步都挪不动
+  function isClearForTank(x, z, r, excludeEntry) {
+    for (var i = 0; i < obstacles.length; i++) {
+      if (obstacles[i] === excludeEntry) continue;
+      var b = obstacles[i].box;
+      if (x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r) return false;
+    }
+    return true;
+  }
+
+  function updateTankPrompt() {
+    if (!tankEnterBtn) return;
+    if (drivingTank || !gameActive) { tankEnterBtn.classList.remove("show"); tankNearby = null; return; }
+    var nearest = null, nearestDist = TANK_ENTER_RADIUS;
+    for (var i = 0; i < drivableTanks.length; i++) {
+      var t = drivableTanks[i];
+      var d = Math.hypot(camera.position.x - t.x, camera.position.z - t.z);
+      if (d < nearestDist) { nearestDist = d; nearest = t; }
+    }
+    tankNearby = nearest;
+    tankEnterBtn.classList.toggle("show", !!nearest);
+  }
+
+  function enterTank(t) {
+    if (!t || drivingTank || !gameActive) return;
+    drivingTank = t;
+    yaw = t.rotY; // 对齐坦克当前朝向，上车瞬间视角不会突然甩一下
+    camera.position.set(t.x, TANK_EYE_H, t.z);
+    gunView.visible = false;
+    playerBody.visible = false;
+    if (tankEnterBtn) tankEnterBtn.classList.remove("show");
+    if (tankExitBtn) tankExitBtn.classList.add("show");
+  }
+
+  function exitTank() {
+    var t = drivingTank;
+    if (!t) return;
+    drivingTank = null;
+    // 从坦克侧面下车，找不到落脚点就试试另一侧
+    var ex = t.x + Math.sin(t.rotY + Math.PI / 2) * 3.4, ez = t.z + Math.cos(t.rotY + Math.PI / 2) * 3.4;
+    if (!isClear(ex, ez, PLAYER_R)) {
+      ex = t.x - Math.sin(t.rotY + Math.PI / 2) * 3.4;
+      ez = t.z - Math.cos(t.rotY + Math.PI / 2) * 3.4;
+    }
+    feetY = groundHeightAt(ex, ez);
+    camera.position.set(ex, feetY + EYE_H, ez);
+    gunView.visible = viewMode === "fp" && !isScoped;
+    playerBody.visible = viewMode === "tp";
+    if (tankExitBtn) tankExitBtn.classList.remove("show");
+  }
+
+  function updateTankDriving(dt) {
+    var t = drivingTank;
+    t.rotY = yaw; // 驾驶时转向直接用看的方向——鼠标/滑动转视角同时也是在打方向盘
+    var fwd = 0;
+    if (isTouch) { fwd = -joyInput.y; }
+    else { if (keys.KeyW || keys.ArrowUp) fwd += 1; if (keys.KeyS || keys.ArrowDown) fwd -= 1; }
+    fwd = Math.max(-1, Math.min(1, fwd));
+    var step = TANK_SPEED * fwd * dt;
+    var nx = camera.position.x - Math.sin(t.rotY) * step;
+    var nz = camera.position.z - Math.cos(t.rotY) * step;
+    if (isClearForTank(nx, camera.position.z, TANK_RADIUS, t.obstacleEntry)) camera.position.x = nx;
+    if (isClearForTank(camera.position.x, nz, TANK_RADIUS, t.obstacleEntry)) camera.position.z = nz;
+    camera.position.y = TANK_EYE_H;
+    t.x = camera.position.x;
+    t.z = camera.position.z;
+    t.hitMesh.position.set(t.x, t.hitMesh.position.y, t.z);
+    t.obstacleEntry.box.setFromObject(t.hitMesh);
+    if (t.model) { t.model.position.set(t.x, 0.05, t.z); t.model.rotation.y = t.rotY; }
+  }
+
   /* ---------------- 跳跃（脚部高度用绝对世界坐标跟踪，能跳到掩体顶部再落地站住） ---------------- */
   var GRAVITY = -20, JUMP_SPEED = 6.6;
   var feetY = 0, jumpVelocity = 0, isGrounded = true;
   var landDip = 0; // 落地那一下给镜头一点短促下沉再回弹，比单纯的抛物线更有"踩到地面"的实感
   function tryJump() {
-    if (!gameActive || !isGrounded) return;
+    if (!gameActive || !isGrounded || drivingTank) return;
     isGrounded = false;
     jumpVelocity = JUMP_SPEED;
     playerJumping = true;
@@ -3765,6 +4174,7 @@
   function updateMovement(dt) {
     if (!gameActive) return;
     camera.rotation.set(pitch, yaw, 0, "YXZ");
+    if (drivingTank) { updateTankDriving(dt); return; }
 
     var fwd = 0, right = 0;
     if (isTouch) {
@@ -3878,16 +4288,19 @@
     var dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     updateMovement(dt);
-    // 敌人的朝向/移动要先算完，AI 判断视野盲区和读取枪口位置时用的才是这一帧最新的朝向和骨骼姿态，
+    // 敌人/队友的朝向/移动要先算完，AI 判断视野盲区和读取枪口位置时用的才是这一帧最新的朝向和骨骼姿态，
     // 不然读到的是上一帧的旧数据——玩家会看到"明明没转过来的敌人却精准命中"、"子弹不是从枪口飞出"
     updateEnemyMovement(dt);
+    updateTeammateMovement(dt);
     updateEnemyAI();
+    updateTeammateAI();
     updateCharacterAnimations(dt);
     updateEffects();
     updateDust(dt);
     updateSky(dt);
     updateBeacons(now);
     updateHealthPacks(now);
+    updateTankPrompt();
     updateThirdPerson(dt);
     renderPass.camera = viewMode === "tp" ? tpCamera : camera;
     composer.render();

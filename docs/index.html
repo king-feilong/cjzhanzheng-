@@ -1,5 +1,5 @@
 <meta charset="utf-8" />
-<title>刺激战争</title>
+<title>末日战争</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -226,6 +226,36 @@
     font-family: "Rajdhani", "Noto Sans SC", sans-serif;
   }
   #hud.visible { display: flex; gap: 2px; flex-wrap: wrap; max-width: 92vw; }
+
+  /* ---------------- 击杀播报：谁击杀了谁，短暂出现后自动淡出 ---------------- */
+  #kill-feed {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 21;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+    max-width: 90vw;
+  }
+  .kill-feed-row {
+    font-family: "Rajdhani", "Noto Sans SC", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    background: rgba(8, 6, 22, 0.72);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 4px 12px;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+  }
+  .kill-feed-row.fade { opacity: 0; }
+  .kf-mid { color: var(--ink-dim); font-weight: 500; margin: 0 2px; }
 
   /* 局内右上角商店按钮 + 面板：切武器/换皮肤，随时可开，打开时自动暂停 */
   #shop-btn {
@@ -520,6 +550,36 @@
     color: var(--ink-dim);
     max-width: 46ch;
     margin-bottom: 16px;
+  }
+
+  .designer-credit {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 6px 12px;
+    background: rgba(0, 229, 255, 0.08);
+    border: 1px solid rgba(0, 229, 255, 0.35);
+    border-radius: 999px;
+    font-family: "Rajdhani", sans-serif;
+  }
+  .designer-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    background: rgba(0, 229, 255, 0.18);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .designer-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .designer-note {
+    font-size: 12px;
+    color: var(--ink-dim);
   }
 
   .loadout {
@@ -931,36 +991,11 @@
   }
   #tank-enter-btn.show, #tank-exit-btn.show { opacity: 1; pointer-events: auto; }
   #tank-enter-btn:active, #tank-exit-btn:active { background: rgba(0, 229, 255, 0.3); }
-  #tank-exit-btn { bottom: 84px; }
 
   /* 坦克装甲 HUD 条：跟顶部其他战报小方块一样的样式，只在驾驶时显示 */
   #tank-hp-chip { display: none; }
   #tank-hp-chip.show { display: block; }
 
-  /* 开炮按钮：只在驾驶坦克时显示，桌面/移动端通用 */
-  #tank-fire-btn {
-    position: absolute;
-    left: 50%;
-    bottom: 34px;
-    transform: translateX(-50%);
-    width: 74px;
-    height: 74px;
-    padding: 0;
-    border-radius: 50%;
-    background: rgba(20, 18, 14, 0.85);
-    border: 3px solid var(--accent);
-    color: var(--ink);
-    font-size: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s;
-    z-index: 33;
-  }
-  #tank-fire-btn.show { opacity: 1; pointer-events: auto; }
-  #tank-fire-btn:active { background: rgba(0, 229, 255, 0.35); }
 </style>
 
 <div id="stage"></div>
@@ -1001,6 +1036,8 @@
     <div class="hud-value" id="tank-hp-val">260</div>
   </div>
 </div>
+
+<div id="kill-feed"></div>
 
 <button id="shop-btn" aria-label="装备商店">
   <svg viewBox="0 0 48 48">
@@ -1043,9 +1080,7 @@
           <div class="wc-desc">换弹快，威力射程一般</div>
         </button>
       </div>
-    </div>
-    <div class="shop-page" data-shop-page="skin" hidden>
-      <div class="shop-section-label">人物皮肤</div>
+      <div class="shop-section-label">武器涂装</div>
       <div id="skin-swatches">
         <button class="skin-swatch" data-skin="original" style="--swatch-color:conic-gradient(#3d5266,#8a6a45,#c9cdd6,#1c1e24,#b8263f)" type="button"><span>原厂本色</span></button>
         <button class="skin-swatch" data-skin="urban" style="--swatch-color:#3d5266" type="button"><span>都市蓝</span></button>
@@ -1054,6 +1089,8 @@
         <button class="skin-swatch" data-skin="stealth" style="--swatch-color:#1c1e24" type="button"><span>暗夜黑</span></button>
         <button class="skin-swatch" data-skin="cyber" style="--swatch-color:#b8263f" type="button"><span>赛博红</span></button>
       </div>
+    </div>
+    <div class="shop-page" data-shop-page="skin" hidden>
       <div class="shop-section-label">英雄皮肤</div>
       <div id="hero-skin-swatches">
         <button class="skin-swatch hero-swatch" data-skin="ironman" style="--swatch-color:url('thumb_ironman.webp')" type="button"><span>钢铁侠</span></button>
@@ -1079,12 +1116,17 @@
   <div id="brief">
     <div id="brief-main">
       <div class="brief-eyebrow">阵地射击 · 试玩</div>
-      <h1>刺激战争</h1>
+      <h1>末日战争</h1>
       <div class="brief-rule"></div>
       <p class="brief-desc">
         一座废弃工业区，14 名武装敌人分散在厂房与掩体之间，会开枪反击。
         瞄准头部一击致命，躯干与四肢伤害较低。歼灭全部目标即通关，生命归零则行动失败。
       </p>
+      <div class="designer-credit">
+        <span class="designer-badge">总设计师</span>
+        <span class="designer-name">王梓晰</span>
+        <span class="designer-note">二年级小学生</span>
+      </div>
       <div class="loadout desktop-only">
         <div class="loadout-row"><span class="loadout-key">WASD</span><span class="loadout-desc">移动</span></div>
         <div class="loadout-row"><span class="loadout-key">鼠标</span><span class="loadout-desc">控制视角</span></div>
@@ -1186,7 +1228,6 @@
 <!-- 坦克上/下车提示按钮：不放进 #touch-layer，桌面端和移动端都要能看到、能点 -->
 <button id="tank-enter-btn" type="button">🚙 驾驶（E）</button>
 <button id="tank-exit-btn" type="button">下车（E）</button>
-<button id="tank-fire-btn" type="button" aria-label="开炮">💥</button>
 
 <script>
 (function () {
@@ -1221,6 +1262,7 @@
   }
 
   function startGame(charGltf) {
+  var PLAYER_NAME = "王梓晰";
   var CHAR = charGltf; // { scene, animations, extraClips } 或 null（后备程序化建模）
   // Mixamo 导出时没勾"In Place"，跑步动作的 Hips 骨骼自己就带了一段水平位移（一个循环里向前挪 2 米多），
   // 而角色的实际移动是由游戏代码按输入/速度另外算的——两者叠加，动画每循环一次（0.75s）就会把身体
@@ -1483,10 +1525,27 @@
   var playerJumping = false;
   var mixamoCharRoot = null; // 原厂 Mixamo 骨骼人物根节点：套漫威皮肤时隐藏它，换回纯色皮肤时重新显示
   var tpGunMesh = null; // 第三人称手上那把可见的枪：漫威皮肤没有对应手骨骼可挂，套上时直接隐藏这把枪
+  // 英雄皮肤的骨骼动作不是自己凭空摆的——直接从这套原厂 Mixamo 骨骼身上实时抄动作：
+  // 每帧读它当前大腿/小腿/大臂/小臂相对绑定姿势转了多少（delta），原样叠加到英雄皮肤对应骨骼的
+  // 绑定姿势上。等于把"原来的骨架动作"实时转描到皮肤模型身上，而不是自己写一套假动作
+  var MIXAMO_LIMB_NAMES = {
+    upperLegL: "mixamorigLeftUpLeg", lowerLegL: "mixamorigLeftLeg",
+    upperLegR: "mixamorigRightUpLeg", lowerLegR: "mixamorigRightLeg",
+    upperArmL: "mixamorigLeftArm", lowerArmL: "mixamorigLeftForeArm",
+    upperArmR: "mixamorigRightArm", lowerArmR: "mixamorigRightForeArm",
+  };
+  var mixamoLimbBones = null;
   (function buildPlayerBody() {
     if (CHAR) {
       var charRoot = THREE.SkeletonUtils.clone(CHAR.scene);
       mixamoCharRoot = charRoot;
+      // 必须在这里、播任何动作之前采集绑定姿势——mixer.update() 一旦跑过，骨骼就已经不在
+      // 绑定姿势上了，之后再采集拿到的就是某一帧的动作姿势，delta 会算错
+      mixamoLimbBones = {};
+      for (var mlk in MIXAMO_LIMB_NAMES) {
+        var mlBone = findBoneExact(charRoot, MIXAMO_LIMB_NAMES[mlk]);
+        if (mlBone) { mlBone.userData._bindQuat = mlBone.quaternion.clone(); mixamoLimbBones[mlk] = mlBone; }
+      }
       charRoot.rotation.y = Math.PI; // 模型绑定姿势朝 +Z，转 180° 才能跟原有 group.rotation.y 朝向约定对齐
       var surfaceMesh = null;
       charRoot.traverse(function (o) {
@@ -1554,6 +1613,7 @@
       gun2.add(tpMuzzleTip);
     }
   })();
+  playerBody.add(makeNameSprite(PLAYER_NAME, "#5ff2ff")); // 第三人称才看得到自己头顶的名字牌
   playerBody.visible = false;
   scene.add(playerBody);
 
@@ -1680,6 +1740,25 @@
       depthWrite: false,
     });
     scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // 给场景挂一张简易环境贴图：金属/PBR 材质（漫威皮肤那些盔甲多半是高金属度）在没有环境贴图
+    // 的情况下几乎只能靠直射光的高光点提亮，大片本该反光的金属看起来近乎全黑——
+    // 用跟天空同一套配色画一张渐变当环境贴图，虽然糙但足够把这些材质"点亮"，不用真的搭一套 IBL
+    (function addEnvironmentMap() {
+      var envCanvas = document.createElement("canvas");
+      envCanvas.width = 128; envCanvas.height = 64;
+      var ectx = envCanvas.getContext("2d");
+      var grad = ectx.createLinearGradient(0, 0, 0, 64);
+      grad.addColorStop(0, new THREE.Color(weather.skyTop).getStyle());
+      grad.addColorStop(0.55, new THREE.Color(weather.skyBottom).getStyle());
+      grad.addColorStop(1, "#3a3a38");
+      ectx.fillStyle = grad;
+      ectx.fillRect(0, 0, 128, 64);
+      var envTex = new THREE.CanvasTexture(envCanvas);
+      envTex.mapping = THREE.EquirectangularReflectionMapping;
+      envTex.encoding = THREE.sRGBEncoding;
+      scene.environment = envTex;
+    })();
 
     // 云：柔化圆斑贴图的一批扁平广告牌，飘在天上，会缓慢横向漂移
     var cloudCanvas = document.createElement("canvas");
@@ -2617,6 +2696,79 @@
   var enemies = [];
   var remainingEnemies = ENEMY_COUNT;
 
+  // 名字池：每局开始/重开时洗牌一遍，createEnemy 里按阵营各自 pop 一个，
+  // 一局内 14 个敌人 + 3 个队友基本不会撞名；池子用完了就重新洗一遍接着用
+  var RED_NAMES = ["赵铁柱", "孙大炮", "周黑子", "吴天豹", "郑石头", "冯刚", "陈猛", "褚剑", "卫强", "蒋锋", "沈虎", "韩烈", "杨威", "朱峰", "秦岭", "许昆", "何彪", "吕刚", "施乾", "张彪"];
+  var BLUE_NAMES = ["刘建军", "赵晓龙", "孙志强", "陈浩", "李帅", "王超"];
+  function shuffled(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = (Math.random() * (i + 1)) | 0;
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  var redNamePool = shuffled(RED_NAMES);
+  var blueNamePool = shuffled(BLUE_NAMES);
+  function nextName(team) {
+    var isBlue = team === "blue";
+    var pool = isBlue ? blueNamePool : redNamePool;
+    if (!pool.length) pool.push.apply(pool, shuffled(isBlue ? BLUE_NAMES : RED_NAMES));
+    return pool.pop();
+  }
+  function resetNamePools() {
+    redNamePool = shuffled(RED_NAMES);
+    blueNamePool = shuffled(BLUE_NAMES);
+  }
+
+  // 击杀播报：attacker 约定跟现有 damageEnemy/damageTeammate 的 attacker 参数完全一致——
+  // 不传或传 "player" 字符串代表玩家本人，传队友/敌人对象引用就取对象自己的 name/team
+  var killFeedEl = document.getElementById("kill-feed");
+  function nameAndColor(who) {
+    if (who && typeof who === "object" && who.name) {
+      return { name: who.name, color: who.team === "blue" ? "#5ff2ff" : "#ff2f6d" };
+    }
+    return { name: PLAYER_NAME, color: "#5ff2ff" };
+  }
+  function pushKillFeed(killer, victim) {
+    var k = nameAndColor(killer), v = nameAndColor(victim);
+    var row = document.createElement("div");
+    row.className = "kill-feed-row";
+    row.innerHTML = "<span style=\"color:" + k.color + "\">" + k.name + "</span>" +
+      "<span class=\"kf-mid\">击杀了</span>" +
+      "<span style=\"color:" + v.color + "\">" + v.name + "</span>";
+    killFeedEl.appendChild(row);
+    setTimeout(function () {
+      row.classList.add("fade");
+      setTimeout(function () { row.remove(); }, 400);
+    }, 4000);
+    // 播报最多同时挂 5 条，超出的直接把最早那条摘掉，不然一波团战刷屏刷不完
+    while (killFeedEl.children.length > 5) killFeedEl.removeChild(killFeedEl.firstChild);
+  }
+
+  // 头顶名字牌：跟地面草纹理、弹痕贴花一样用 canvas 现画文字再当贴图，不用额外加载字体资源；
+  // 用 Sprite 而不是普通 Mesh 是因为 Sprite 永远面向摄像机，人物转身时名字牌不会跟着转到侧面看不清
+  function makeNameSprite(text, color) {
+    var canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 64;
+    var ctx = canvas.getContext("2d");
+    ctx.font = "bold 34px 'Noto Sans SC', 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(0,0,0,0.75)";
+    ctx.strokeText(text, 128, 34);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 128, 34);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    var sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.0, 0.25, 1);
+    sprite.position.set(0, 2.05, 0);
+    return sprite;
+  }
+
   function findEnemySpot() {
     for (var a = 0; a < 40; a++) {
       var x = rr(-HALF + 6, HALF - 6), z = rr(-HALF + 6, HALF - 6);
@@ -2768,6 +2920,9 @@
     iffLight.position.copy(iffBulb.position);
     group.add(iffLight);
 
+    var name = nextName(team);
+    group.add(makeNameSprite(name, team === "blue" ? "#5ff2ff" : "#ff2f6d"));
+
     var pos = team === "blue" ? findTeammateSpot() : findEnemySpot();
     group.position.set(pos.x, 0, pos.z);
     group.rotation.y = rr(0, Math.PI * 2);
@@ -2776,6 +2931,7 @@
     return {
       group: group,
       team: team,
+      name: name,
       parts: parts,
       rightArm: rightArm,
       gun: gun,
@@ -2849,14 +3005,15 @@
   var tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6a64, roughness: 0.95 });
   // 材质对应的着色器程序是"第一次真正被绘制时"才由驱动编译的，墓碑材质在第一个敌人死亡前
   // 从没上过屏，第一次生成墓碑那一下就会撞上这次编译，表现为死亡瞬间卡一下——
-  // 这里用一个不加入场景、只用来强制编译的临时网格提前把编译这一步做掉，
-  // 真正生成墓碑时用的是同一个材质对象，直接复用已编译好的程序
+  // 试过 renderer.compile() 只热主通道、试过整个 render() 连阴影通道一起热，
+  // 都还是有概率在死亡那一下卡。干脆釜底抽薪：墓碑压根不投影（castShadow 全部去掉），
+  // 阴影那条单独的深度着色器编译路径直接不存在，这个卡点就没有再触发的可能——
+  // 墓碑本来就是贴地小物件，不投影视觉上基本看不出来。render() 预热主着色器仍然保留
   (function warmUpTombstoneShader() {
-    // 用真正的 scene（带上实际的灯光配置）来编译，不然编译出来的着色器变体（灯光数量不同）
-    // 跟正式渲染时需要的对不上，等于没预热；compile 本身不会真的画到屏幕上，加完就能立刻移除
     var warm = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
+    warm.position.set(0, 0.31, 0);
     scene.add(warm);
-    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
     scene.remove(warm);
   })();
   function spawnTombstone(x, z) {
@@ -2864,7 +3021,6 @@
     var slab = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
     slab.position.y = 0.31;
     slab.rotation.x = -0.06; // 略微前倾，插在地里的沧桑感
-    slab.castShadow = true;
     slab.receiveShadow = true;
     group.add(slab);
     var base = new THREE.Mesh(tombstoneBaseGeo, tombstoneMat);
@@ -2877,12 +3033,13 @@
     tombstones.push(group);
   }
 
-  function killEnemy(enemy) {
+  function killEnemy(enemy, attacker) {
     enemy.alive = false;
     remainingEnemies--;
     score++;
     scoreEl.textContent = score;
     updateTargetInfo();
+    pushKillFeed(attacker, enemy);
 
     if (enemy.animState && enemy.animState.actions.dying) {
       playAction(enemy.animState, "dying", { once: true, fade: 0.1 });
@@ -2910,15 +3067,20 @@
       dispose: function () {
         enemy.mixerDone = true;
         spawnTombstone(enemy.group.position.x, enemy.group.position.z);
-        for (var i = 0; i < enemy.parts.length; i++) {
-          enemy.parts[i].mesh.geometry.dispose();
-          enemy.parts[i].mesh.material.dispose();
-        }
-        if (enemy.gun) {
-          enemy.gun.geometry.dispose();
-          enemy.gun.material.dispose();
-        }
-        if (enemy.charMaterial) enemy.charMaterial.dispose(); // 蒙皮网格几何体是所有敌人共用的模板，不能 dispose，只清理每个实例克隆出来的材质
+        // dispose() 会让渲染器立刻同步跑一遍 GPU 资源释放（deleteBuffer/deleteProgram），
+        // 跟同一帧里刚生成的墓碑挤在一起也可能是卡顿的一部分原因——挪到下一个宏任务里做，
+        // 不占用这一帧的时间片，反正这几个 mesh 已经从场景里摘掉了，晚一点点释放没有影响
+        setTimeout(function () {
+          for (var i = 0; i < enemy.parts.length; i++) {
+            enemy.parts[i].mesh.geometry.dispose();
+            enemy.parts[i].mesh.material.dispose();
+          }
+          if (enemy.gun) {
+            enemy.gun.geometry.dispose();
+            enemy.gun.material.dispose();
+          }
+          if (enemy.charMaterial) enemy.charMaterial.dispose(); // 蒙皮网格几何体是所有敌人共用的模板，不能 dispose，只清理每个实例克隆出来的材质
+        }, 0);
       },
     });
 
@@ -2941,7 +3103,7 @@
       headshotPopup._t = setTimeout(function () { headshotPopup.classList.remove("show"); }, 420);
     }
     if (enemy.hp <= 0) {
-      killEnemy(enemy);
+      killEnemy(enemy, attacker);
     } else {
       // 挨打之后进入警戒状态：放弃随机巡逻，转为主动反击打中自己的目标——
       // 但只是"知道是谁打的我、该往哪追"，不代表已经看见对方了！之前这里换目标时没清
@@ -2997,7 +3159,7 @@
     setTimeout(function () { arrow.remove(); }, 1000);
   }
 
-  function damagePlayer(amount, sourcePos) {
+  function damagePlayer(amount, sourcePos, attacker) {
     if (!gameActive) return;
     // 开着坦克的时候，"打中玩家"这发子弹实际上是打在车身装甲上，先扣坦克自己的血，
     // 装甲扛不住了才报废、强制下车——车里的人不会被直接打空血
@@ -3016,6 +3178,7 @@
     if (playerHP <= 0) {
       playerHP = 0;
       updateHpUI();
+      pushKillFeed(attacker, null);
       endGame(false);
       return;
     }
@@ -3024,8 +3187,9 @@
 
   // 队友死亡：跟 killEnemy 走同样的倒地/沉入地面/留墓碑流程，但不计分、不影响歼灭进度——
   // 队友只是助战，不是通关目标
-  function killTeammate(tm) {
+  function killTeammate(tm, attacker) {
     tm.alive = false;
+    pushKillFeed(attacker, tm);
     if (tm.animState && tm.animState.actions.dying) {
       playAction(tm.animState, "dying", { once: true, fade: 0.1 });
     }
@@ -3050,15 +3214,17 @@
       dispose: function () {
         tm.mixerDone = true;
         spawnTombstone(tm.group.position.x, tm.group.position.z);
-        for (var i = 0; i < tm.parts.length; i++) {
-          tm.parts[i].mesh.geometry.dispose();
-          tm.parts[i].mesh.material.dispose();
-        }
-        if (tm.gun) {
-          tm.gun.geometry.dispose();
-          tm.gun.material.dispose();
-        }
-        if (tm.charMaterial) tm.charMaterial.dispose();
+        setTimeout(function () {
+          for (var i = 0; i < tm.parts.length; i++) {
+            tm.parts[i].mesh.geometry.dispose();
+            tm.parts[i].mesh.material.dispose();
+          }
+          if (tm.gun) {
+            tm.gun.geometry.dispose();
+            tm.gun.material.dispose();
+          }
+          if (tm.charMaterial) tm.charMaterial.dispose();
+        }, 0);
       },
     });
   }
@@ -3069,7 +3235,7 @@
     playHit();
     if (hitPoint) spawnHitSpark(hitPoint);
     if (tm.hp <= 0) {
-      killTeammate(tm);
+      killTeammate(tm, attacker);
     } else {
       // 挨打后转去追击打中自己的敌人，但跟敌人那边一样，换目标必须清空 visibleSince——
       // 不然队友也会出现"没看见却精准开火"的问题，得先追过去真正看到对方才能还击
@@ -3638,7 +3804,7 @@
       spawnTracer(gunWorldPos, targetPosOf(en.target).clone(), 0xff2f6d);
       playEnemyShot();
       if (Math.random() < ENEMY_HIT_CHANCE) {
-        if (en.target === "player") damagePlayer(rr(6, 16), en.group.position);
+        if (en.target === "player") damagePlayer(rr(6, 16), en.group.position, en);
         else damageTeammate(en.target, rr(6, 16), en.target.group.position.clone().add(new THREE.Vector3(0, 1.2, 0)), en);
       }
     }
@@ -3961,28 +4127,52 @@
   // 漫威皮肤模型没有一个是 Mixamo 骨骼，也没带内置动作，接不上现有的动作状态机；
   // 但骨骼本身还在，能摆的就直接摆大腿/小腿/大臂/小臂做一个简易走路循环，
   // 摆不了骨骼的（没有骨架的静态网格）才退化成整体起伏+摇摆
+  // 从原厂骨骼实时抄一根骨骼的动作：算出它相对自己绑定姿势转了多少（delta），
+  // 原样叠加到目标骨骼的绑定姿势上——只要两套骨架的绑定姿势大致都是"站直、手臂自然下垂"，
+  // 这个 delta 就能相对准确地跨骨架搬过去，不需要目标骨骼跟原骨骼长得一模一样
+  function retargetBone(target, source) {
+    if (!target || !source) return false;
+    __heroLimbQuat.copy(source.userData._bindQuat).invert().multiply(source.quaternion);
+    target.quaternion.copy(target.userData._bindQuat).multiply(__heroLimbQuat);
+    return true;
+  }
   function updateHeroSkinBob(dt) {
     if (!activeHeroModel) return;
     var cfg = HERO_SKINS[activeHeroKey];
     var bones = heroBoneCache[activeHeroKey];
     var speed = !playerMoving ? 1.2 : (playerSpeedTier === "run" ? 9 : 6);
     heroBobPhase += dt * speed;
-    if (bones) {
-      var legAmp = !playerMoving ? 0 : (playerSpeedTier === "run" ? 0.62 : 0.4);
-      var armAmp = legAmp * 0.7;
-      var s = Math.sin(heroBobPhase), sOpp = Math.sin(heroBobPhase + Math.PI);
-      // 同侧手脚是反相摆的（人走路时左腿向前摆的同时是右臂向前摆），膝盖只在腿摆到后方时略微弯曲
-      swingBone(bones.upperLegL, s * legAmp);
-      swingBone(bones.upperLegR, sOpp * legAmp);
-      swingBone(bones.lowerLegL, Math.max(0, -s) * legAmp * 0.9);
-      swingBone(bones.lowerLegR, Math.max(0, -sOpp) * legAmp * 0.9);
-      swingBone(bones.upperArmL, sOpp * armAmp);
-      swingBone(bones.upperArmR, s * armAmp);
-      swingBone(bones.lowerArmL, legAmp * 0.15);
-      swingBone(bones.lowerArmR, legAmp * 0.15);
-      // 走/跑之外仍然叠一点点整体上下起伏，站定不动时完全归零，不然摆完腿人物还是会飘一下
-      var bob = playerMoving ? Math.abs(s) * 0.03 : 0;
-      activeHeroModel.position.y = cfg.offset[1] + bob;
+    if (bones && mixamoLimbBones) {
+      var allRetargeted = true;
+      for (var limbKey in MIXAMO_LIMB_NAMES) {
+        if (!retargetBone(bones[limbKey], mixamoLimbBones[limbKey])) allRetargeted = false;
+      }
+      activeHeroModel.position.y = cfg.offset[1];
+      activeHeroModel.rotation.z = 0;
+      if (!allRetargeted) {
+        // 极少数骨骼没配对上（比如某个皮肤没找到对应骨骼）时，退化成简易摆动兜底，
+        // 至少不会看着完全僵住不动
+        var legAmp = !playerMoving ? 0 : (playerSpeedTier === "run" ? 0.62 : 0.4);
+        var s = Math.sin(heroBobPhase), sOpp = Math.sin(heroBobPhase + Math.PI);
+        if (!bones.upperLegL || !mixamoLimbBones.upperLegL) swingBone(bones.upperLegL, s * legAmp);
+        if (!bones.upperLegR || !mixamoLimbBones.upperLegR) swingBone(bones.upperLegR, sOpp * legAmp);
+      }
+    } else if (bones) {
+      // CHAR 模型加载失败、退化成程序化人形的极端情况下没有 mixamoLimbBones 可抄，
+      // 只能靠自己写的简易正弦摆动兜底
+      var legAmp2 = !playerMoving ? 0 : (playerSpeedTier === "run" ? 0.62 : 0.4);
+      var armAmp2 = legAmp2 * 0.7;
+      var s2 = Math.sin(heroBobPhase), sOpp2 = Math.sin(heroBobPhase + Math.PI);
+      swingBone(bones.upperLegL, s2 * legAmp2);
+      swingBone(bones.upperLegR, sOpp2 * legAmp2);
+      swingBone(bones.lowerLegL, Math.max(0, -s2) * legAmp2 * 0.9);
+      swingBone(bones.lowerLegR, Math.max(0, -sOpp2) * legAmp2 * 0.9);
+      swingBone(bones.upperArmL, sOpp2 * armAmp2);
+      swingBone(bones.upperArmR, s2 * armAmp2);
+      swingBone(bones.lowerArmL, legAmp2 * 0.15);
+      swingBone(bones.lowerArmR, legAmp2 * 0.15);
+      var bob2 = playerMoving ? Math.abs(s2) * 0.03 : 0;
+      activeHeroModel.position.y = cfg.offset[1] + bob2;
       activeHeroModel.rotation.z = 0;
     } else {
       var amp = !playerMoving ? 0.012 : 0.045;
@@ -4320,6 +4510,7 @@
       if (en.charMaterial) en.charMaterial.dispose();
     }
     enemies.length = 0;
+    resetNamePools(); // 重开一局，名字池也跟着重新洗一遍，不然会跟上一局用剩的池子接着发
     for (var k = 0; k < ENEMY_COUNT; k++) enemies.push(createEnemy("red"));
     remainingEnemies = ENEMY_COUNT;
     updateTargetInfo();
@@ -4449,7 +4640,7 @@
       setFlag(true);
       syncTouchFiring();
       btn.classList.add("firing");
-      shoot();
+      if (drivingTank) tankShoot(); else shoot();
       var t = ev.changedTouches[0];
       btnTouchId = t.identifier; lastBX = t.clientX; lastBY = t.clientY;
     }, { passive: false });
@@ -4498,15 +4689,12 @@
   /* ---------------- 坦克上/下车按钮：桌面点击、移动端点按都要能用（这俩按钮不在只有触屏才显示的 touch-layer 里） ---------------- */
   tankEnterBtn = document.getElementById("tank-enter-btn");
   tankExitBtn = document.getElementById("tank-exit-btn");
-  tankFireBtn = document.getElementById("tank-fire-btn");
   tankHpChip = document.getElementById("tank-hp-chip");
   tankHpVal = document.getElementById("tank-hp-val");
   tankEnterBtn.addEventListener("click", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); });
   tankEnterBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); if (tankNearby) enterTank(tankNearby); }, { passive: false });
   tankExitBtn.addEventListener("click", function (ev) { ev.preventDefault(); exitTank(); });
   tankExitBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); exitTank(); }, { passive: false });
-  tankFireBtn.addEventListener("click", function (ev) { ev.preventDefault(); tankShoot(); });
-  tankFireBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); tankShoot(); }, { passive: false });
 
   /* ---------------- 倍镜瞄准：桌面端按住鼠标右键，移动端按住镜头按钮 ---------------- */
   var isScoped = false;
@@ -4546,14 +4734,16 @@
   // 之前这里一直是 0（相当于假设模型摆正朝向刚好对齐约定），但两辆坦克原本是按各自停车位
   // 手动调的 rotY（0 和 90°），从没验证过跟这个约定是否一致——这正是"驾驶方向不对、看不到炮管"的根源。
   // 用第三人称跟车视角实测校准过：90° 时炮管正好指向摄像机看过去的正前方，是对的
-  var TANK_MODEL_YAW_OFFSET = Math.PI / 2;
+  // 实测炮管朝向和行驶/视角方向正好反了 180°——原来是 +PI/2，模型局部 -X 轴（炮管指向）
+  // 转到世界坐标后正好等于"前进方向"的反方向；改成 -PI/2 才是对的
+  var TANK_MODEL_YAW_OFFSET = -Math.PI / 2;
   var TANK_CAM_DIST = 11, TANK_CAM_HEIGHT = 5; // 第三人称跟车视角：拉远拉高才能看到整台车+炮管
   var TANK_FP_FORWARD = 1.6, TANK_FP_HEIGHT = 2.7; // 第一人称视角相对车体中心的前移/抬高，能看见炮管往前指
   var tankNearby = null; // 当前离得够近、可以按按钮上车的那辆坦克
   // DOM 引用在下面触控/按钮那段统一获取后回填到这两个变量上；这里只声明不赋值——
   // 那段按钮事件绑定代码在源码顺序上在这段之前就执行了，要是这里写 "= null" 会按执行顺序
   // 把已经绑定好的 DOM 引用覆盖回 null（var 声明会提升，但赋值不会，两处顺序错了会互相打架）
-  var tankEnterBtn, tankExitBtn, tankFireBtn, tankHpChip, tankHpVal;
+  var tankEnterBtn, tankExitBtn, tankHpChip, tankHpVal;
 
   // 敌人 AI/血包拾取等"游戏逻辑"要知道玩家实际在哪，驾驶坦克时这个位置是坦克的位置，
   // 不是摄像机渲染位置——第一人称视角为了能看到炮管会往前探一点、第三人称更是跟车视角完全脱开，
@@ -4608,7 +4798,6 @@
     playerBody.visible = false;
     if (tankEnterBtn) tankEnterBtn.classList.remove("show");
     if (tankExitBtn) tankExitBtn.classList.add("show");
-    if (tankFireBtn) tankFireBtn.classList.add("show");
     if (tankHpChip) tankHpChip.classList.add("show");
     updateTankHpUI();
     playTankStart();
@@ -4630,7 +4819,6 @@
     gunView.visible = viewMode === "fp" && !isScoped;
     playerBody.visible = viewMode === "tp";
     if (tankExitBtn) tankExitBtn.classList.remove("show");
-    if (tankFireBtn) tankFireBtn.classList.remove("show");
     if (tankHpChip) tankHpChip.classList.remove("show");
   }
 
@@ -4677,6 +4865,17 @@
     setTimeout(function () { try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch (e) {} }, 300);
   }
 
+  // 坦克碾压：车身范围内的敌人直接碾死，仇恨全部集中在坦克身上，还谈什么躲子弹
+  var TANK_RAM_RADIUS = TANK_RADIUS + 0.6;
+  function checkTankRam(t) {
+    for (var i = 0; i < enemies.length; i++) {
+      var en = enemies[i];
+      if (!en.alive) continue;
+      var dx = en.group.position.x - t.x, dz = en.group.position.z - t.z;
+      if (dx * dx + dz * dz < TANK_RAM_RADIUS * TANK_RAM_RADIUS) killEnemy(en, "player");
+    }
+  }
+
   function updateTankDriving(dt) {
     var t = drivingTank;
     t.rotY = yaw; // 驾驶时转向直接用看的方向——鼠标/滑动转视角同时也是在打方向盘
@@ -4693,6 +4892,7 @@
     t.obstacleEntry.box.setFromObject(t.hitMesh);
     if (t.model) { t.model.position.set(t.x, 0.05, t.z); t.model.rotation.y = t.rotY + TANK_MODEL_YAW_OFFSET; }
     updateTankEngineSound(Math.abs(fwd) > 0.05);
+    checkTankRam(t);
 
     if (viewMode === "tp") {
       // 第三人称跟车视角：跟玩家平时的过肩视角同一套公式，只是围着坦克转而不是围着人转
@@ -4851,7 +5051,11 @@
       camera.updateProjectionMatrix();
     }
 
-    if ((isTouch && touchFiring) || (!isTouch && mouseFiring)) shoot();
+    // 开着坦克时，同一个开火键（鼠标左键/触屏开火按钮）直接改开炮，不用再额外弹一个专门的
+    // 坦克开火按钮出来跟下车按钮抢位置
+    if ((isTouch && touchFiring) || (!isTouch && mouseFiring)) {
+      if (drivingTank) tankShoot(); else shoot();
+    }
   }
 
   window.addEventListener("resize", function () {

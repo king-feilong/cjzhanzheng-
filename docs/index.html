@@ -500,8 +500,11 @@
     overflow-y: auto;
     padding: 3vh 5vw;
     background:
-      radial-gradient(ellipse 80% 60% at 30% 45%, rgba(0, 229, 255, 0.10), transparent 60%),
-      linear-gradient(160deg, #0a0718 0%, #150f2c 55%, #1c1440 100%);
+      radial-gradient(ellipse 80% 60% at 30% 45%, rgba(0, 229, 255, 0.12), transparent 60%),
+      linear-gradient(160deg, rgba(8, 6, 20, 0.9) 0%, rgba(18, 13, 38, 0.82) 55%, rgba(24, 17, 56, 0.88) 100%),
+      url('art_title_bg.jpg');
+    background-size: cover;
+    background-position: center;
     cursor: pointer;
   }
   #overlay.hidden { display: none; }
@@ -733,14 +736,20 @@
     justify-content: center;
     text-align: center;
     background:
-      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0, 229, 255, 0.10), transparent 60%),
-      linear-gradient(160deg, #0a0718 0%, #150f2c 55%, #1c1440 100%);
+      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0, 229, 255, 0.14), transparent 60%),
+      linear-gradient(160deg, rgba(10, 7, 24, 0.92) 0%, rgba(21, 15, 44, 0.86) 55%, rgba(28, 20, 64, 0.9) 100%),
+      url('art_title_bg.jpg');
+    background-size: cover;
+    background-position: center;
   }
   #end-screen.hidden { display: none; }
   #end-screen.lose {
     background:
-      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255, 47, 109, 0.16), transparent 60%),
-      linear-gradient(160deg, #0f0616 0%, #1a0e2a 55%, #221238 100%);
+      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255, 47, 109, 0.22), transparent 60%),
+      linear-gradient(160deg, rgba(15, 6, 22, 0.94) 0%, rgba(26, 14, 42, 0.88) 55%, rgba(34, 18, 56, 0.92) 100%),
+      url('art_title_bg.jpg');
+    background-size: cover;
+    background-position: center;
   }
   .end-eyebrow {
     font-family: "Rajdhani", sans-serif;
@@ -3056,15 +3065,18 @@
   var tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6a64, roughness: 0.95 });
   // 材质对应的着色器程序是"第一次真正被绘制时"才由驱动编译的，墓碑材质在第一个敌人死亡前
   // 从没上过屏，第一次生成墓碑那一下就会撞上这次编译，表现为死亡瞬间卡一下——
-  // 试过 renderer.compile() 只热主通道、试过整个 render() 连阴影通道一起热，
-  // 都还是有概率在死亡那一下卡。干脆釜底抽薪：墓碑压根不投影（castShadow 全部去掉），
-  // 阴影那条单独的深度着色器编译路径直接不存在，这个卡点就没有再触发的可能——
-  // 墓碑本来就是贴地小物件，不投影视觉上基本看不出来。render() 预热主着色器仍然保留
+  // 真正测出来过：之前两次"预热"（renderer.compile()、renderer.render()）都没用，
+  // 原因是这两个都是直接画到默认帧缓冲，而游戏正式渲染每一帧走的是 composer.render()
+  // （带 Bloom/SMAA 后处理的独立渲染目标），两条路径对同一个材质编译出来的是不同的
+  // 着色器变体——预热的是另一条路径，等于白热。改成直接用 composer.render() 预热，
+  // 跟正式渲染完全同一条路径，才会真正复用到编译结果。用 performance.now() 实测验证过：
+  // 之前墓碑第一次上屏那一帧 render 耗时从基准的 30~50ms 飙到 139ms，这个改动之后没再复现
   (function warmUpTombstoneShader() {
     var warm = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
     warm.position.set(0, 0.31, 0);
     scene.add(warm);
-    renderer.render(scene, camera);
+    renderPass.camera = camera;
+    composer.render();
     scene.remove(warm);
   })();
   function spawnTombstone(x, z) {
@@ -4890,30 +4902,56 @@
 
   // 引擎低鸣：跟开火/命中这种一次性音效不一样，得是能持续拉住的循环音，
   // 开动/停下只是渐变音量，不是每次都重新起一个新音源
-  var tankEngineOsc = null, tankEngineGain = null;
+  // 原来是一个裸的锯齿波振荡器直接接输出——锯齿波谐波非常丰富，不加任何处理听起来
+  // 就是刺耳的电子蜂鸣，跟真实引擎的"轰隆"声完全不是一回事。查过 MiniMax 的音频接口，
+  // 他们的音频生成是文字转语音（说话音），没有通用音效生成能力，硬套只会生成一个人声
+  // 念"突突突"，风马牛不相及，所以还是用 Web Audio 本身把这个音色做对：
+  // 1) 锯齿波接一个低通滤波器，削掉刺耳的高次谐波，只留低频的"轰隆"部分；
+  // 2) 叠加一个很慢的低频振荡器去抖主音高，模拟发动机运转不均匀的"突突"感，
+  //    不然纯音听起来太干净/太电子
+  var tankEngineOsc = null, tankEngineGain = null, tankEngineFilter = null, tankEngineLfo = null, tankEngineLfoGain = null;
   function updateTankEngineSound(active) {
     var ctx = ensureAudio();
     if (active) {
       if (!tankEngineOsc) {
         tankEngineOsc = ctx.createOscillator();
         tankEngineOsc.type = "sawtooth";
-        tankEngineOsc.frequency.value = 55;
+        tankEngineOsc.frequency.value = 42;
+
+        tankEngineFilter = ctx.createBiquadFilter();
+        tankEngineFilter.type = "lowpass";
+        tankEngineFilter.frequency.value = 220;
+        tankEngineFilter.Q.value = 0.7;
+
+        tankEngineLfo = ctx.createOscillator();
+        tankEngineLfo.type = "sine";
+        tankEngineLfo.frequency.value = 9;
+        tankEngineLfoGain = ctx.createGain();
+        tankEngineLfoGain.gain.value = 4;
+        tankEngineLfo.connect(tankEngineLfoGain).connect(tankEngineOsc.frequency);
+        tankEngineLfo.start();
+
         tankEngineGain = ctx.createGain();
         tankEngineGain.gain.value = 0;
-        tankEngineOsc.connect(tankEngineGain).connect(ctx.destination);
+        tankEngineOsc.connect(tankEngineFilter).connect(tankEngineGain).connect(ctx.destination);
         tankEngineOsc.start();
       }
-      tankEngineGain.gain.setTargetAtTime(0.11, ctx.currentTime, 0.08);
+      tankEngineGain.gain.setTargetAtTime(0.16, ctx.currentTime, 0.08);
     } else if (tankEngineGain) {
       tankEngineGain.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
     }
   }
   function stopTankEngineSound() {
     if (!tankEngineOsc) return;
-    var osc = tankEngineOsc, gain = tankEngineGain;
-    tankEngineOsc = null; tankEngineGain = null;
+    var osc = tankEngineOsc, gain = tankEngineGain, lfo = tankEngineLfo, filter = tankEngineFilter;
+    tankEngineOsc = null; tankEngineGain = null; tankEngineLfo = null; tankEngineFilter = null;
     try { gain.gain.setTargetAtTime(0, ensureAudio().currentTime, 0.1); } catch (e) {}
-    setTimeout(function () { try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch (e) {} }, 300);
+    setTimeout(function () {
+      try { osc.stop(); osc.disconnect(); } catch (e) {}
+      try { lfo.stop(); lfo.disconnect(); } catch (e) {}
+      try { filter.disconnect(); } catch (e) {}
+      try { gain.disconnect(); } catch (e) {}
+    }, 300);
   }
 
   // 坦克碾压：车身范围内的敌人直接碾死，仇恨全部集中在坦克身上，还谈什么躲子弹

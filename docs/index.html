@@ -1539,12 +1539,16 @@
     if (CHAR) {
       var charRoot = THREE.SkeletonUtils.clone(CHAR.scene);
       mixamoCharRoot = charRoot;
-      // 必须在这里、播任何动作之前采集绑定姿势——mixer.update() 一旦跑过，骨骼就已经不在
-      // 绑定姿势上了，之后再采集拿到的就是某一帧的动作姿势，delta 会算错
+      // 先只找骨骼引用，绑定姿势的采集挪到下面 mixer 播完 idle 第一帧之后——
+      // Mixamo 原始绑定姿势是 T-pose（手臂水平伸直），而英雄皮肤那些模型大多本来就是
+      // "自然站立"姿势（手臂本来就是垂在身体两侧）。如果拿 T-pose 当基准算 delta，
+      // 光是"T-pose 转到站立"这一步就有近 100° 的量，套到本来就是自然站姿的骨骼上
+      // 会直接转过头（手臂抬到天上去）。改成拿 idle 第一帧（同样是"自然站立"）当基准，
+      // delta 就只反映"从站立到走/跑/开火"这一小段真正的动作，两边基准对得上
       mixamoLimbBones = {};
       for (var mlk in MIXAMO_LIMB_NAMES) {
         var mlBone = findBoneExact(charRoot, MIXAMO_LIMB_NAMES[mlk]);
-        if (mlBone) { mlBone.userData._bindQuat = mlBone.quaternion.clone(); mixamoLimbBones[mlk] = mlBone; }
+        if (mlBone) mixamoLimbBones[mlk] = mlBone;
       }
       charRoot.rotation.y = Math.PI; // 模型绑定姿势朝 +Z，转 180° 才能跟原有 group.rotation.y 朝向约定对齐
       var surfaceMesh = null;
@@ -1567,6 +1571,7 @@
         playAction(playerAnimState, playerAnimState.actions.idle ? "idle" : "crouchRun");
         playerMixer.update(0);
       }
+      for (var mlk2 in mixamoLimbBones) mixamoLimbBones[mlk2].userData._bindQuat = mixamoLimbBones[mlk2].quaternion.clone();
 
       // 手枪要挂在骨骼摆出真实持枪姿势之后再量朝向：绑定姿势（T-pose）跟端枪的手部朝向完全不一样，
       // 挂太早算出来的旋转会离谱地偏

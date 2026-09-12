@@ -477,11 +477,11 @@
   #hp-bar-fill {
     height: 100%;
     width: 100%;
-    background: linear-gradient(90deg, #4ab0d6, #6fe3ff);
+    background: url('ui_hp_fill.webp') left center / 168px 20px, linear-gradient(90deg, #4ab0d6, #6fe3ff);
     box-shadow: 0 0 10px rgba(0, 229, 255, 0.65);
-    transition: width 0.25s ease, background 0.25s ease;
+    transition: width 0.25s ease, filter 0.25s ease;
   }
-  #hp-bar-fill.low { background: linear-gradient(90deg, #8a2418, var(--danger)); box-shadow: 0 0 10px rgba(255, 60, 60, 0.65); }
+  #hp-bar-fill.low { filter: hue-rotate(150deg) saturate(1.5); box-shadow: 0 0 10px rgba(255, 60, 60, 0.65); }
   #hp-bar-val {
     font-size: 18px;
     font-weight: 700;
@@ -853,7 +853,7 @@
     width: 118px;
     height: 118px;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 45%, rgba(58, 66, 40, 0.55) 0%, rgba(33, 31, 24, 0.6) 70%);
+    background: radial-gradient(circle at 50% 45%, rgba(58, 66, 40, 0.55) 0%, rgba(33, 31, 24, 0.6) 70%), url('ui_joystick_base.webp') center/cover;
     border: 2px solid rgba(154, 168, 74, 0.7);
     box-shadow: 0 0 16px rgba(154, 168, 74, 0.35), inset 0 0 14px rgba(0, 0, 0, 0.4);
   }
@@ -890,7 +890,7 @@
   #fire-btn, #fire-btn-left {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 55%, #4a4636 0%, #322f24 60%, #211f18 100%);
+    background: url('ui_fire_btn.webp') center/cover;
     border: 2px solid var(--olive);
     box-shadow: none;
     color: rgba(240, 233, 216, 0.55);
@@ -901,7 +901,7 @@
     justify-content: center;
     pointer-events: auto;
     z-index: 31;
-    filter: grayscale(0.7);
+    filter: grayscale(0.6) brightness(0.75);
     transition: filter 0.08s ease, background 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
   }
   #fire-btn { right: 38px; bottom: 84px; width: 90px; height: 90px; }
@@ -910,11 +910,10 @@
      （部分移动浏览器对长按/连点时的 :active 状态处理不一致） */
   #fire-btn:active, #fire-btn.firing,
   #fire-btn-left:active, #fire-btn-left.firing {
-    background: radial-gradient(circle at 50% 62%, #fff2b0 0%, #ffc23c 26%, #ff8a1f 52%, #d43a1f 78%, #8f1f14 100%);
     border-color: #4df3ff;
-    box-shadow: 0 0 18px rgba(255, 120, 30, 0.55);
+    box-shadow: 0 0 22px rgba(255, 140, 30, 0.75);
     color: #2a0d02;
-    filter: grayscale(0) brightness(1.15);
+    filter: grayscale(0) brightness(1.35) saturate(1.3);
     animation: flame-flicker 0.4s ease-in-out infinite;
   }
   @keyframes flame-flicker {
@@ -932,7 +931,7 @@
     height: 58px;
     padding: 0;
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, rgba(66, 58, 18, 0.9), rgba(24, 21, 10, 0.85));
+    background: url('ui_reload_btn.webp') center/cover, radial-gradient(circle at 35% 30%, rgba(66, 58, 18, 0.9), rgba(24, 21, 10, 0.85));
     border: 2px solid #7a6a10;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 8px rgba(122, 106, 16, 0.35);
     display: flex;
@@ -941,11 +940,12 @@
     pointer-events: auto;
     z-index: 31;
   }
-  #reload-btn svg { width: 76%; height: 76%; overflow: visible; }
+  #reload-btn svg { display: none; }
   #reload-btn:active,
   #reload-btn.reloading-active {
-    background: rgba(0, 229, 255, 0.35);
     border-color: #4df3ff;
+    filter: brightness(1.35) saturate(1.3);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 12px rgba(0, 229, 255, 0.6);
   }
 
   /* 视角切换按钮 */
@@ -999,7 +999,7 @@
     height: 66px;
     padding: 0;
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, rgba(52, 49, 38, 0.9), rgba(20, 18, 14, 0.85));
+    background: url('ui_jump_btn.webp') center/cover, radial-gradient(circle at 35% 30%, rgba(52, 49, 38, 0.9), rgba(20, 18, 14, 0.85));
     border: 2px solid rgba(216, 195, 122, 0.45);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 8px rgba(0, 0, 0, 0.35);
     display: flex;
@@ -1008,8 +1008,29 @@
     pointer-events: auto;
     z-index: 31;
   }
-  #jump-btn svg { width: 58%; height: 58%; overflow: visible; }
-  #jump-btn:active { background: rgba(0, 229, 255, 0.35); border-color: #4df3ff; }
+  #jump-btn svg { display: none; }
+  #jump-btn:active { border-color: #4df3ff; filter: brightness(1.35) saturate(1.3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 12px rgba(0, 229, 255, 0.6); }
+
+  /* 趴下按钮：放在跳跃按钮左侧（离右边缘更远），不与其他按钮重叠 */
+  #prone-btn {
+    position: absolute;
+    right: 220px;
+    bottom: 98px;
+    width: 58px;
+    height: 58px;
+    padding: 0;
+    border-radius: 50%;
+    background: url('ui_prone_btn.webp') center/cover, radial-gradient(circle at 35% 30%, rgba(52, 49, 38, 0.9), rgba(20, 18, 14, 0.85));
+    border: 2px solid rgba(216, 195, 122, 0.45);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 8px rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 31;
+  }
+  #prone-btn svg { display: none; }
+  #prone-btn:active, #prone-btn.prone-active { border-color: #4df3ff; filter: brightness(1.35) saturate(1.3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 12px rgba(0, 229, 255, 0.6); }
 
   /* 坦克上/下车提示：走近才出现，桌面/移动端通用，不放进只有触屏才显示的 #touch-layer */
   #tank-enter-btn, #tank-exit-btn {
@@ -1276,6 +1297,12 @@
     <svg viewBox="0 0 48 48">
       <path d="M 24 7 L 36 19.5 L 28 19.5 L 28 30 L 20 30 L 20 19.5 L 12 19.5 Z" fill="#fff35c" />
       <path d="M 11 37 Q 24 44 37 37" stroke="#ffe600" stroke-width="3.2" fill="none" stroke-linecap="round" />
+    </svg>
+  </button>
+  <button id="prone-btn" aria-label="趴下">
+    <svg viewBox="0 0 48 48">
+      <rect x="8" y="26" width="26" height="6" rx="3" fill="#6fe3ff" />
+      <circle cx="37" cy="20" r="5" fill="#6fe3ff" />
     </svg>
   </button>
 </div>
@@ -2739,6 +2766,7 @@
   })();
 
   var PLAYER_R = 0.4, MOVE_SPEED = 6.2;
+  var isProne = false, PRONE_SPEED_MULT = 0.35, PRONE_EYE_H = 0.7;
 
   function canMoveTo(x, z) { return isClear(x, z, PLAYER_R, feetY); }
 
@@ -4510,6 +4538,7 @@
     if (ev.code === "KeyV") toggleViewMode();
     if (ev.code === "Space") { tryJump(); ev.preventDefault(); }
     if (ev.code === "KeyE") { if (drivingTank) exitTank(); else if (tankNearby) enterTank(tankNearby); }
+    if (ev.code === "KeyC") toggleProne();
   });
   window.addEventListener("keyup", function (ev) { keys[ev.code] = false; });
   var keys = {};
@@ -4553,6 +4582,7 @@
     isReloading = false;
     updateAmmoUI();
     feetY = 0; jumpVelocity = 0; isGrounded = true; playerJumping = false;
+    setProne(false);
     camera.position.set(0, EYE_H, 10);
     // 万一是开着坦克阵亡的，endGame 只清了 drivingTank 状态，没来得及把枪/身体模型的可见性
     // 切回来（走的是 exitTank 那条路径）——这里按当前视角模式重新同步一次，避免重开一局后第一人称看不到枪
@@ -4749,6 +4779,10 @@
   var jumpBtn = document.getElementById("jump-btn");
   jumpBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); tryJump(); }, { passive: false });
 
+  var proneBtn = document.getElementById("prone-btn");
+  proneBtn.addEventListener("click", function (ev) { ev.preventDefault(); toggleProne(); });
+  proneBtn.addEventListener("touchstart", function (ev) { ev.preventDefault(); toggleProne(); }, { passive: false });
+
   /* ---------------- 坦克上/下车按钮：桌面点击、移动端点按都要能用（这俩按钮不在只有触屏才显示的 touch-layer 里） ---------------- */
   tankEnterBtn = document.getElementById("tank-enter-btn");
   tankExitBtn = document.getElementById("tank-exit-btn");
@@ -4848,6 +4882,7 @@
 
   function enterTank(t) {
     if (!t || drivingTank || !gameActive || t.destroyed) return;
+    setProne(false);
     drivingTank = t;
     yaw = t.rotY; // 对齐坦克当前朝向，上车瞬间视角不会突然甩一下
     // 坦克默认用第三人称跟车视角上车：能看清整台车（包括炮管）朝哪开，
@@ -5035,11 +5070,19 @@
   var feetY = 0, jumpVelocity = 0, isGrounded = true;
   var landDip = 0; // 落地那一下给镜头一点短促下沉再回弹，比单纯的抛物线更有"踩到地面"的实感
   function tryJump() {
-    if (!gameActive || !isGrounded || drivingTank) return;
+    if (!gameActive || !isGrounded || drivingTank || isProne) return;
     isGrounded = false;
     jumpVelocity = JUMP_SPEED;
     playerJumping = true;
   }
+
+  function setProne(v) {
+    if (drivingTank) v = false;
+    if (v === isProne) return;
+    isProne = v;
+    if (proneBtn) proneBtn.classList.toggle("prone-active", isProne);
+  }
+  function toggleProne() { setProne(!isProne); }
   var bobTime = 0, footstepTimer = 0;
 
   function updateMovement(dt) {
@@ -5062,7 +5105,8 @@
       var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
       var rx = Math.cos(yaw), rz = -Math.sin(yaw);
       var moveDirX = fx * fwd + rx * right, moveDirZ = fz * fwd + rz * right;
-      attemptMove(moveDirX * MOVE_SPEED * dt, moveDirZ * MOVE_SPEED * dt);
+      var curSpeed = MOVE_SPEED * (isProne ? PRONE_SPEED_MULT : 1);
+      attemptMove(moveDirX * curSpeed * dt, moveDirZ * curSpeed * dt);
       // 身体转向实际移动方向（不是镜头方向）：后退/平移时人物会自然转身、正面朝着前进方向，
       // 跑步动画才不会跟位移对不上看起来像滑步
       var targetBodyYaw = Math.atan2(-moveDirX, -moveDirZ);
@@ -5117,7 +5161,8 @@
     feetY = nextFeetY;
     landDip *= Math.exp(-dt * 14);
     // 仅上下起伏，不做左右滚转，避免整屏晃动导致眩晕
-    camera.position.y = feetY + EYE_H - landDip + (isMoving && isGrounded ? Math.abs(Math.sin(bobTime)) * BOB_AMP : 0);
+    var curEyeH = isProne ? PRONE_EYE_H : EYE_H;
+    camera.position.y = feetY + curEyeH - landDip + (isMoving && isGrounded && !isProne ? Math.abs(Math.sin(bobTime)) * BOB_AMP : 0);
 
     // 枪械视图模型：随移动轻微摆动 + 开火后坐力回弹 + 换弹时的下压/回摆动作
     gunRecoil *= Math.exp(-dt * 12);

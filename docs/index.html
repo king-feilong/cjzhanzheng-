@@ -3027,6 +3027,7 @@
       animState: animState,
       mixerDone: false,
       charMaterial: charMaterial,
+      iffLight: iffLight,
       hp: ENEMY_MAX_HP,
       alive: true,
       target: null, // 当前瞄着的目标：'player' 或某个队友/敌人对象引用
@@ -3085,26 +3086,89 @@
   }
   updateTargetInfo();
 
+  // 敌我识别灯是每个角色自带的 PointLight，死亡时如果连尸体一起 scene.remove()，
+  // 场上存活点光源的总数就会变化——Three.js r128 是按当前场景光源数量把数量编译进
+  // 着色器里的（NUM_POINT_LIGHTS 这类 #define），数量一变，所有正在用的
+  // MeshStandardMaterial/MeshLambertMaterial 材质当场就要重新编译一份新变体，
+  // 表现出来就是每次击杀都卡一下，而且怎么预热都没用（因为每杀一个光源数就再变一次）。
+  // 真正的解法是让点光源总数在整局游戏里从头到尾保持不变：死亡时只把灯从尸体上摘下来
+  // 强度归零、单独挂回 scene 根节点，而不是连灯一起整个移除
+  var extinguishedIffLights = [];
+  function extinguishIffLight(unit) {
+    if (!unit.iffLight) return;
+    unit.group.remove(unit.iffLight);
+    unit.iffLight.intensity = 0;
+    scene.add(unit.iffLight);
+    extinguishedIffLights.push(unit.iffLight);
+  }
+
   // 敌人死亡后不再直接消失，原地留一个墓碑标记——几何体/材质在所有墓碑之间共用（跟弹痕贴花
   // 同样的思路），新增墓碑不用额外创建资源，重开一局清空时也不用逐个 dispose
   var tombstones = [];
   var tombstoneSlabGeo = new THREE.BoxGeometry(0.5, 0.62, 0.12);
   var tombstoneBaseGeo = new THREE.BoxGeometry(0.62, 0.1, 0.22);
   var tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6a64, roughness: 0.95 });
-  // 材质对应的着色器程序是"第一次真正被绘制时"才由驱动编译的，墓碑材质在第一个敌人死亡前
+  // 材质对应的着色器程序是"第一次真正被绘制时"才由驱动编译的。墓碑材质在第一个敌人死亡前
   // 从没上过屏，第一次生成墓碑那一下就会撞上这次编译，表现为死亡瞬间卡一下——
   // 真正测出来过：之前两次"预热"（renderer.compile()、renderer.render()）都没用，
   // 原因是这两个都是直接画到默认帧缓冲，而游戏正式渲染每一帧走的是 composer.render()
   // （带 Bloom/SMAA 后处理的独立渲染目标），两条路径对同一个材质编译出来的是不同的
   // 着色器变体——预热的是另一条路径，等于白热。改成直接用 composer.render() 预热，
-  // 跟正式渲染完全同一条路径，才会真正复用到编译结果。用 performance.now() 实测验证过：
-  // 之前墓碑第一次上屏那一帧 render 耗时从基准的 30~50ms 飙到 139ms，这个改动之后没再复现
-  (function warmUpTombstoneShader() {
+  // 跟正式渲染完全同一条路径，才会真正复用到编译结果。
+  //
+  // 后来用 renderer.info.programs 实测追出来：光预热墓碑材质本身还不够——第一次真的死人时
+  // 卡顿依然存在（130~140ms），而且同一帧里一次性新增编译的不是 1 个而是 7~9 个着色器程序。
+  // 根因是这些材质从建场景那一刻起就没被"画"过哪怕一次：warmUp 用的镜头固定在出生点，
+  // 视锥之外的敌人角色（连带它们身上好几种材质：军服、装备、义肢反光件等）从来没被
+  // draw call 碰过，直到玩家真的转头朝那个方向开枪、敌人倒地才第一次触发编译；
+  // 死亡动作（dying）用到的骨骼姿态本身也是从没播放/渲染过的新姿势。
+  // 解法：预热这一帧临时关掉整个场景的视锥裁剪（frustumCulled = false），
+  // 强制所有已存在的物体（不管镜头朝哪）都被真正 draw 一次；再额外挑一个真实敌人
+  // 短暂摆一次死亡姿势、连带把死亡动作会用到的骨骼姿态也过一遍着色器编译，
+  // 结束后再摆回站立/移动姿势——这一切都发生在开始界面挡住画面之前的同一帧，
+  // 玩家看不到这个中间状态。
+  (function warmUpAllShaders() {
     var warm = new THREE.Mesh(tombstoneSlabGeo, tombstoneMat);
     warm.position.set(0, 0.31, 0);
+    warm.receiveShadow = true; // 必须跟 spawnTombstone 里的真实墓碑完全同款 flag，
+    // 否则 receiveShadow 开关本身就会让驱动编译出另一个带阴影采样代码的着色器变体，
+    // 预热等于白热——这个 flag 漏加正是上一轮复测时仍然量到 138ms 尖峰的原因之一
     scene.add(warm);
+
+    var warmEnemy = null;
+    for (var wi = 0; wi < enemies.length; wi++) {
+      if (enemies[wi].mixer && enemies[wi].animState && enemies[wi].animState.actions.dying) { warmEnemy = enemies[wi]; break; }
+    }
+    var prevAnimName = warmEnemy ? warmEnemy.animState.current : null;
+    if (warmEnemy) {
+      playAction(warmEnemy.animState, "dying", { once: true, fade: 0.001 });
+      warmEnemy.mixer.update(0.05);
+    }
+
+    var culledObjs = [];
+    scene.traverse(function (o) {
+      if (o.frustumCulled) { culledObjs.push(o); o.frustumCulled = false; }
+    });
+
     renderPass.camera = camera;
     composer.render();
+
+    for (var ci = 0; ci < culledObjs.length; ci++) culledObjs[ci].frustumCulled = true;
+    if (warmEnemy && prevAnimName) {
+      // 不用 playAction 的交叉淡入淡出复位：crossFadeFrom 的权重过渡要靠后续多帧 mixer.update
+      // 才能真正切换过去，预热这里只调用一次 update 的话“死亡”动作权重还没退干净，
+      // 敌人会带着一截死亡姿势残留进入正式游戏——直接把两个动作的权重手动摆到位，一步到位
+      warmEnemy.animState.actions.dying.stop();
+      warmEnemy.animState.actions.dying.setEffectiveWeight(0);
+      var restoreAction = warmEnemy.animState.actions[prevAnimName];
+      restoreAction.reset();
+      restoreAction.setLoop(THREE.LoopRepeat, Infinity);
+      restoreAction.clampWhenFinished = false;
+      restoreAction.setEffectiveWeight(1);
+      restoreAction.play();
+      warmEnemy.animState.current = prevAnimName;
+      warmEnemy.mixer.update(0);
+    }
     scene.remove(warm);
   })();
   function spawnTombstone(x, z) {
@@ -3126,6 +3190,7 @@
 
   function killEnemy(enemy, attacker) {
     enemy.alive = false;
+    extinguishIffLight(enemy);
     remainingEnemies--;
     score++;
     scoreEl.textContent = score;
@@ -3280,6 +3345,7 @@
   // 队友只是助战，不是通关目标
   function killTeammate(tm, attacker) {
     tm.alive = false;
+    extinguishIffLight(tm);
     pushKillFeed(attacker, tm);
     if (tm.animState && tm.animState.actions.dying) {
       playAction(tm.animState, "dying", { once: true, fade: 0.1 });
@@ -4603,6 +4669,11 @@
       if (en.charMaterial) en.charMaterial.dispose();
     }
     enemies.length = 0;
+    // 上一局里死掉的人留下的"熄灭的识别灯"是单独挂在 scene 根节点上的（不在任何 group 里，
+    // 上面按 group 逐个 remove 的循环碰不到它们），这里要清干净，否则重开几局之后场上会
+    // 越攒越多熄灭状态的点光源
+    for (var li = 0; li < extinguishedIffLights.length; li++) scene.remove(extinguishedIffLights[li]);
+    extinguishedIffLights.length = 0;
     resetNamePools(); // 重开一局，名字池也跟着重新洗一遍，不然会跟上一局用剩的池子接着发
     for (var k = 0; k < ENEMY_COUNT; k++) enemies.push(createEnemy("red"));
     remainingEnemies = ENEMY_COUNT;
